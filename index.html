@@ -3175,12 +3175,13 @@ function updAgencyStatusBar(){
 }
 
 // Pay extras for ALL agency players at once — opens modal for payment method, then applies to all
+let _bulkAgencyWbIds=null; // ✅ IDs stored here — avoids JSON.stringify in onclick attr (breaks for string IDs)
 function payAllAgencyExtras(){
   const wbs=getWbs();
   const withExtras=wbs.filter(w=>isAgencyWb(w)&&canEditWb(w.id)&&agencyExtraItems(w).length>0);
   if(!withExtras.length){toast('Žiadni hráči s doplnkami');return;}
+  _bulkAgencyWbIds=withExtras.map(w=>w.id); // safe reference, no HTML injection
   const totalExt=withExtras.reduce((s,w)=>s+agencyExtraItems(w).reduce((t,i)=>t+i.price*i.qty*(1-(i.disc||0)/100),0),0);
-  // Show a quick confirmation with payment method
   const modal=document.createElement('div');
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9000;display:flex;align-items:center;justify-content:center;';
   modal.innerHTML=`<div style="background:var(--card);border-radius:var(--r);padding:20px;min-width:300px;max-width:400px;width:90%;">
@@ -3191,7 +3192,7 @@ function payAllAgencyExtras(){
       <div class="po" id="bulk-po-k" onclick="this.className='po card';$('bulk-po-c').className='po';"><div class="poi">💳</div><div class="pol">Karta</div></div>
     </div>
     <div class="r2">
-      <button class="btn G" onclick="confirmBulkAgencyExtras(${JSON.stringify(withExtras.map(w=>w.id))})">✓ Zaplatiť</button>
+      <button class="btn G" onclick="confirmBulkAgencyExtras()">✓ Zaplatiť</button>
       <button class="btn" onclick="this.closest('div[style*=fixed]').remove()">Zrušiť</button>
     </div>
   </div>`;
@@ -3199,7 +3200,9 @@ function payAllAgencyExtras(){
   modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
 }
 
-function confirmBulkAgencyExtras(wbIds){
+function confirmBulkAgencyExtras(){
+  const wbIds=_bulkAgencyWbIds||[];
+  if(!wbIds.length){toast('Chyba: žiadni hráči');return;}
   const payEl=$('bulk-po-c');const payM=payEl?.classList.contains('cash')?'cash':($('bulk-po-k')?.classList.contains('card')?'card':null);
   if(!payM){toast(t('toast-select-pay'));return;}
   const wbs=getWbs();let count=0;
@@ -6937,12 +6940,14 @@ async function syncBackToCalendar(sessKey,status,calEventIdOverride){
     const allPlayers=[...wbs,...closedWbs];
     const instrArr=getSessionInstructors(sess);
     const playerNames=allPlayers.map(w=>w.name).filter(Boolean).join(', ');
-    const existingDesc=(ev.description||'').split('\n').filter(l=>!l.startsWith('✅')&&!l.startsWith('❌')&&!l.startsWith('Hráči:')&&!l.startsWith('Players:')&&!l.startsWith('Inštruktor:')).join('\n').trim();
+    const existingDesc=(ev.description||'').split('\n').filter(l=>!l.startsWith('✅')&&!l.startsWith('❌')&&!l.startsWith('🕒')&&!l.startsWith('Hráči:')&&!l.startsWith('Players:')&&!l.startsWith('Inštruktor:')).join('\n').trim();
     let appendLines='';
     if(status==='done'){
+      const _openStr=(sess&&sess.startedAt)?new Date(sess.startedAt).toLocaleString('sk'):'';
       appendLines=`✅ Akcia uzavretá: ${new Date().toLocaleString('sk')}`;
+      if(_openStr)appendLines+=`\n🕒 Účet otvorený: ${_openStr}`;
       if(instrArr.length)appendLines+=`\nInštruktor: ${instrArr.join(', ')}`;
-      if(playerNames)appendLines+=`\nHráči: ${allPlayers.length} (${playerNames})`;
+      appendLines+=`\nHráči: ${allPlayers.length}`;
     }else{
       appendLines=`❌ No-show: ${new Date().toLocaleString('sk')}`;
     }
