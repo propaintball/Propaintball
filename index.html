@@ -486,7 +486,7 @@ textarea{resize:none;line-height:1.5;}
             </div>
             <!-- Agency PB quick status bar -->
             <div id="agency-status-bar" style="display:none;background:var(--abg);border:.5px solid var(--abd);border-radius:var(--rs);padding:7px 12px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-              <div style="font-size:11px;color:var(--amb);font-weight:600;" id="agency-status-text">🏢 Agentúra PB</div>
+              <div style="font-size:11px;color:var(--amb);font-weight:600;" id="agency-status-text">🏢 Agentúra</div>
               <button class="btn xs A" id="agency-pay-all-extras-btn" onclick="payAllAgencyExtras()" style="display:none;" title="Zaplatiť doplnky všetkým agency hráčom">💳 Zaplatiť doplnky všetkým</button>
             </div>
             <div id="wb-total-bar" style="display:none;background:var(--bg2);border:.5px solid var(--b1);border-radius:var(--rs);padding:6px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
@@ -1033,6 +1033,8 @@ const PKG={
      drinkTypes:['Voda','Soft drink','Birell','Pivo 10','Pivo 12','Pivo Special','Energetický nápoj']},
   5:{name:'Agentúra PB',    col:'var(--amb)', bg:'var(--abg)', balls:200,  lsz:200, dt:'basic', drinks:1, isPB:true, isAgency:true,
      drinkTypes:['Birell','Čaj','Voda','Soft drink','Pivo 10','Pivo 12']},
+  6:{name:'Agentúra AS',    col:'var(--amb)', bg:'var(--abg)', balls:400,  lsz:400, dt:'basic', drinks:1, isAS:true, isAgency:true,
+     drinkTypes:['Birell','Čaj','Voda','Soft drink','Pivo 10','Pivo 12']},
   10:{name:'Airsoft',       col:'var(--grn)', bg:'var(--gbg)', balls:400,  lsz:400, dt:'any',   drinks:0, isAS:true, refill:200},
   20:{name:'Lasertag 3×10', col:'var(--tel)', bg:'var(--tbg)', balls:0,    lsz:0,   dt:'none',  drinks:0, isLT:true, rounds:3},
   21:{name:'Lasertag 6×10', col:'var(--tel)', bg:'var(--tbg)', balls:0,    lsz:0,   dt:'none',  drinks:0, isLT:true, rounds:6},
@@ -1062,6 +1064,7 @@ const DEF_P=[
   {id:18,name:'Extra hodina (po-št)',price:40,  cat:'Extra hodina',emoji:'⏰', isHour:true},
   // ── PAINTBALL PACKAGES ──
   {id:19,name:'Agentúra PB',         price:20,  cat:'Package',    emoji:'🏢', pkgId:5,  mode:'pb'},
+  {id:37,name:'Agentúra AS',         price:18,  cat:'Package',    emoji:'🏢', pkgId:6,  mode:'as'},
   // ── LASERTAG PACKAGES ──
   {id:20,name:'Lasertag 3×10 min',   price:11,  cat:'Package',    emoji:'🔫', pkgId:20, mode:'lt'},
   {id:21,name:'Lasertag 6×10 min',   price:18,  cat:'Package',    emoji:'🔫', pkgId:21, mode:'lt'},
@@ -1097,6 +1100,8 @@ function checkStorageQuota(){
 function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);LS.s('pb_nid',nextId);LS.s('pb_nfc',nfcN);LS.s('pb_ar',arenas);LS.s('pb_ins',instructors);LS.s('pb_ac',activities);LS.s('pb_ss',sessArr);LS.s('pb_cid',curSid);LS.s('pb_biz',biz);LS.s('pb_sbu',sbUrl);LS.s('pb_sbk',sbKey);LS.s('pb_hr',hrRate);LS.s('pb_adm',admPw);LS.s('pb_arch',archive);checkStorageQuota();}
 // ══ STATE ══
 let prods=LS.g('pb_p',DEF_P);
+// ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
+[37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
 let wbMap=LS.g('pb_wb',{});
 let closed=LS.g('pb_cl',[]);
 let archive=LS.g('pb_arch',[]);
@@ -1654,7 +1659,10 @@ async function sbPush(){
 
 // Apply settings-only from cloud row (no sessions/bills touched)
 function _applySettings(d){
-  if(d.prods)prods=d.prods;
+  if(d.prods){prods=d.prods;
+    // ✅ Domigruj nové default balíky (Agentúra AS) aj keď cloud má starší zoznam
+    [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
+  }
   if(d.arenas)arenas=d.arenas;
   if(d.instructors)instructors=d.instructors;
   if(d.activities)activities=d.activities;
@@ -1679,6 +1687,21 @@ function _applySettings(d){
 function _mergeSessFromCloud(d){
   if(!d||!d.sess||!d.sess.key)return;
   const key=d.sess.key;
+  // ✅ KRITICKÉ: ak má session lokálne vyplnenú odmenu (pout), bola tu definitívne uzavretá.
+  //    Cloud 'active' (napr. z druhého zariadenia, ktoré ju ešte má otvorenú) ju NESMIE vzkriesiť.
+  const localPout=lPouts()[key];
+  if(localPout){
+    // Session je uzavretá tu — odober ju zo sessArr ak sa medzitým objavila, a NEpridávaj späť.
+    const exIdx=sessArr.findIndex(s=>s.key===key);
+    if(exIdx>=0){
+      sessArr.splice(exIdx,1);delete wbMap[key];
+      if(curSid===key){curSid=sessArr.length?sessArr[sessArr.length-1].key:null;selId=null;chkd=new Set();}
+    }
+    // Stále zlúč uzavreté účty (neprísť o dáta), ale session sa už neotvorí.
+    const existBillIds0=new Set(closed.map(w=>w.id));
+    (d.bills||[]).forEach(b=>{if(!existBillIds0.has(b.id)){closed.push(b);existBillIds0.add(b.id);}});
+    return;
+  }
   if(d.status==='active'){
     const existIdx=sessArr.findIndex(s=>s.key===key);
     if(existIdx<0){
@@ -1713,6 +1736,21 @@ function _mergeSessFromCloud(d){
   if(d.deposit){const deps=lDeposits();if(!deps[key]){deps[key]=d.deposit;sDeposits(deps);}}
   // Merge pout (first one wins)
   if(d.pout){const pouts=lPouts();if(!pouts[key]){pouts[key]=d.pout;sPouts(pouts);}}
+}
+
+// ✅ Self-heal: odober zo sessArr každú session, ktorá už má vyplnenú odmenu (= uzavretá).
+//    Opravuje aj existujúci pokazený stav (uzavretá akcia stále viditeľná ako otvorená).
+//    Vracia počet odobraných sessioní.
+function _pruneClosedFromSessArr(){
+  const pouts=lPouts();
+  const before=sessArr.length;
+  const removed=sessArr.filter(s=>pouts[s.key]);
+  if(!removed.length)return 0;
+  removed.forEach(s=>{delete wbMap[s.key];});
+  sessArr=sessArr.filter(s=>!pouts[s.key]);
+  if(curSid&&pouts[curSid]){curSid=sessArr.length?sessArr[sessArr.length-1].key:null;selId=null;chkd=new Set();}
+  console.log('[pruneClosed] Odobraných '+removed.length+' uzavretých sessioní zo sessArr:',removed.map(s=>s.key));
+  return before-sessArr.length;
 }
 
 // Merge pull — pulls settings + all session rows, merges without data loss
@@ -1753,6 +1791,7 @@ async function sbPull(){
           if(legacyAdded>0)console.log('[sbPull] Legacy main: merged '+legacyAdded+' chýbajúcich uzavretých účtov');
         }
       }
+      _pruneClosedFromSessArr(); // ✅ odober uzavreté akcie (s odmenou) zo sessArr
       saveAll();
       selId=null;chkd=new Set();refUI();
       dot('✓','var(--grn)');
@@ -1790,6 +1829,7 @@ async function sbPollSessions(){
     const prevSessKeys=new Set(sessArr.map(s=>s.key));
     const curSidBefore=curSid; // Capture BEFORE merge — _mergeSessFromCloud may change curSid
     rows.forEach(row=>{if(row.payload)_mergeSessFromCloud(row.payload);});
+    _pruneClosedFromSessArr(); // ✅ uzavreté akcie (s odmenou) nikdy nezostanú v sessArr
 
     // ✅ Was OUR (local) session removed? (closed remotely by admin / force-close)
     const ourSessClosed=curSidBefore&&prevSessKeys.has(curSidBefore)&&!sessArr.find(s=>s.key===curSidBefore);
@@ -3166,10 +3206,10 @@ function updAgencyStatusBar(){
   const withExtras=agencyWbs.filter(w=>agencyExtraItems(w).length>0);
   const readyForInvoice=agencyWbs.filter(w=>agencyExtraItems(w).length===0);
   if(withExtras.length>0){
-    txt.innerHTML=`🏢 Agentúra PB · <strong style="color:var(--amb);">${withExtras.length} hráč${withExtras.length>1?'i':''}</strong> má${withExtras.length>1?'jú':''} nezaplatené doplnky`;
+    txt.innerHTML=`🏢 Agentúra · <strong style="color:var(--amb);">${withExtras.length} hráč${withExtras.length>1?'i':''}</strong> má${withExtras.length>1?'jú':''} nezaplatené doplnky`;
     btn.style.display='inline-flex';
   }else{
-    txt.innerHTML=`🏢 Agentúra PB · <strong style="color:var(--pur);">Všetci ready</strong> — uzavretie na faktúru`;
+    txt.innerHTML=`🏢 Agentúra · <strong style="color:var(--pur);">Všetci ready</strong> — uzavretie na faktúru`;
     btn.style.display='none';
   }
 }
@@ -3583,7 +3623,7 @@ function closeBill(){
       openAgencyPay(selId);
     }else{
       // Only package remains — will be closed on invoice when session closes
-      toast('🏢 Agentúra PB: balík sa uzavrie na faktúru pri Uzavrieť akciu');
+      toast('🏢 Agentúra: balík sa uzavrie na faktúru pri Uzavrieť akciu');
     }
     return;
   }
@@ -3686,6 +3726,31 @@ function checkLastPlayerClosed(sid){
   // Allow close even with 0 bills (e.g. all reopened)
   setTimeout(()=>{openCloseSess(sk,sessClosedBills);},400);
 }
+// ══ ODMENA INŠTRUKTORA — pevná suma podľa aktivity (tabuľka 2026) ══
+// Základ = 7€ × hodiny zmeny (hra + 2h réžia) → pevné sumy nižšie.
+// 1% tringelt ZRUŠENÝ. Každý inštruktor dostane plnú sumu (× počet inštruktorov).
+// Mesačné bonusy (20€ najväčšia tržba, 20€ recenzie, 20€ mesačný) sa riešia MANUÁLNE mimo pokladne.
+const REWARD={paintball:35,airsoft:35,agency:28,gelnerf:28,laser30:21,laser60:28};
+function rewardPerInstr(bills,sess){
+  const list=bills||[];
+  // Agentúra (balík Agentúra PB) — väčšina hráčov agentúrnych → 28€ (Paintball aj Airsoft agentúra)
+  const agencyCount=list.filter(w=>isAgencyWb(w)).length;
+  if(agencyCount>0&&agencyCount*2>=list.length)return REWARD.agency;
+  // Aktivita podľa balíkov v účtoch (presnejšie ako názov aktivity)
+  const pkgIds=new Set();
+  list.forEach(w=>(w.items||[]).forEach(i=>{const p=prods.find(x=>x.id===i.id);if(p&&p.pkgId)pkgIds.add(p.pkgId);}));
+  if(pkgIds.has(21))return REWARD.laser60;            // Lasertag 6×10 (60 min) → 28€
+  if(pkgIds.has(20))return REWARD.laser30;            // Lasertag 3×10 (30 min) → 21€
+  if(pkgIds.has(30)||pkgIds.has(40))return REWARD.gelnerf; // Gelblaster / Nerf → 28€
+  if(pkgIds.has(10))return REWARD.airsoft;            // Airsoft → 35€
+  if([1,2,3,4].some(id=>pkgIds.has(id)))return REWARD.paintball; // Paintball → 35€
+  // Fallback podľa názvu aktivity (ak žiadne balíky neboli pridané)
+  const act=((sess&&sess.activity)||'').toLowerCase();
+  if(act.includes('laser'))return REWARD.laser30;
+  if(act.includes('gel')||act.includes('nerf'))return REWARD.gelnerf;
+  if(act.includes('airsoft'))return REWARD.airsoft;
+  return REWARD.paintball; // default
+}
 function openCloseSess(key,bills){
   // ✅ Only session's own instructor (or admin) can close the session
   if(!isAdmin()){
@@ -3728,26 +3793,10 @@ function openCloseSess(key,bills){
   const invTot=allBills.reduce((s,w)=>s+wInvoiceAmt(w),0);
   const cashTot=allBills.reduce((s,w)=>s+wCashAmt(w),0);
   const cardTot=allBills.reduce((s,w)=>s+wCardAmt(w),0);
-  // Nová formula: max(hodinová_sadzba + 1%_bonus/počet_instr, 35)
+  // ✅ Odmena 2026: pevná suma podľa aktivity × počet inštruktorov (1% tringelt zrušený)
   const sessInstrsArr=getSessionInstructors(sess);
   const numInstrs=Math.max(1,sessInstrsArr.length);
-  // Vypočítaj odpracované hodiny z čias session
-  let hoursWorked=5;// default
-  try{
-    const de=lDE();const ded=de[key];
-    const startTime=ded?.stRaw||(sess?.time||'');const startDate=ded?.sdRaw||(sess?.date||'');
-    // End time = now (session is being closed)
-    if(startDate&&startTime){
-      const startDt=new Date(startDate+'T'+startTime);
-      const endDt=new Date();
-      const diff=(endDt-startDt)/3600000;// hours
-      if(diff>0&&diff<24)hoursWorked=Math.round(diff*10)/10;
-    }
-  }catch(e){}
-  const hourlyBase=7*hoursWorked;
-  const bonusPerInstr=(tot*0.01)/numInstrs;
-  const perInstr=Math.max(hourlyBase+bonusPerInstr,35);
-  const suggested=Math.round(perInstr/0.5)*0.5;
+  const perInstr=rewardPerInstr(allBills,sess);
   closeSessKey=key;
   const hasAgency=allBills.some(w=>isAgencyWb(w));
   const sessInstrs=getSessionInstructors(sess);
@@ -3761,8 +3810,7 @@ function openCloseSess(key,bills){
   const editBtn=$('cs-pay-edit-btn');if(editBtn)editBtn.style.display='none';
   const formula=$('cs-pay-formula');
   if(formula){
-    const bonusTxt=numInstrs>1?`1% / ${numInstrs} inštr. = ${fp(bonusPerInstr)}`:`1% z ${fp(tot)} = ${fp(tot*0.01)}`;
-    formula.textContent=`${hoursWorked}h × 7€ = ${fp(hourlyBase)} + ${bonusTxt} = ${fp(hourlyBase+bonusPerInstr)} → min. 35€/inštr. → ${fp(perInstr)}/inštr.${numInstrs>1?` × ${numInstrs} = ${fp(perInstr*numInstrs)}`:''} ${isAdmin()?'':'(len admin môže meniť)'}`;
+    formula.textContent=`Pevná odmena podľa aktivity: ${fp(perInstr)} / inštruktor${numInstrs>1?` × ${numInstrs} inštr. = ${fp(perInstr*numInstrs)}`:''}${isAdmin()?'':' (len admin môže meniť)'}`;
   }
   om('m-close-sess');
 }
@@ -3866,7 +3914,7 @@ function _doConfirmGrp(){
     }
     // Non-agency players cannot pay by invoice in group
     const nonAgency=sel.filter(w=>!isAgencyWb(w));
-    if(nonAgency.length>0){toast('❌ Len Agentúra PB môže platiť faktúrou');return;}
+    if(nonAgency.length>0){toast('❌ Len agentúra môže platiť faktúrou');return;}
   }
   const grpBaseIdx=closed.filter(x=>x.sKey===sk).length;
   sel.forEach((w,idx)=>{w.closedAt=new Date().toISOString();w.orderIdx=grpBaseIdx+idx;w.payM=gPayM;w.justClosed=true;w.sKey=sk;w.sArena=s?.arena;w.sInstr=s?.instructor;w.sAct=s?.activity;w.sDate=s?.date;w.sTime=s?.time;if(s?.calRunNumber)w.sCalRunNumber=s.calRunNumber;closed.unshift(w);if(w.email){const cust=findCustomerByEmail(w.email);if(!cust)addCustomer(w.name,w.email,'',false);}});
@@ -4584,8 +4632,9 @@ function openPout(key,tot){
   // Recalculate tot from actual bills to ensure accuracy
   const actualTot=closed.filter(w=>(w.sKey||'unknown')===key).reduce((s,w)=>s+totalAmt(w),0);
   poutKey=key;poutTot=actualTot||tot||0;const sm=buildSessMap();const s=sm[key];const pouts=lPouts();const ex=pouts[key];
+  const poutBills=closed.filter(w=>(w.sKey||'unknown')===key);
   const smInstrs=getSessionInstructors(s);const smN=Math.max(1,smInstrs.length);
-  const smBonus=(tot*0.01)/smN;const smBase=7*5;const smPer=Math.max(smBase+smBonus,35);const smTotal=Math.round((smPer*smN)/0.5)*0.5;
+  const smPer=rewardPerInstr(poutBills,s);const smTotal=Math.round((smPer*smN)/0.5)*0.5;
   $('m-pout-i').innerHTML=`<strong style="color:var(--t1);">Inštruktori:</strong> ${smInstrs.join(', ')||'—'}<br><strong style="color:var(--t1);">Tržby:</strong> ${fp(tot)}<br>Odporúčaná odmena (celkom): <strong style="color:var(--amb);">${fp(smTotal)}</strong>${smN>1?`<br><span style="font-size:10px;color:var(--t3);">${smN}× inštruktor · ${fp(smPer)} každý</span>`:''}`;
   $('po-type').value=ex?ex.type:'fixed';$('po-hrs').value=ex&&ex.hrs?ex.hrs:5;
   $('po-amt').value=ex?ex.amt:smTotal.toFixed(2);
@@ -4596,7 +4645,8 @@ function updPout(){
   const t=$('po-type').value;$('po-h-row').style.display=t==='hourly'?'block':'none';
   if(t==='fixed'){
     const sm2=buildSessMap();const s2=sm2[poutKey];const smInstrs2=getSessionInstructors(s2);const smN2=Math.max(1,smInstrs2.length);
-    const smBonus2=(poutTot*0.01)/smN2;const smBase2=7*5;const smPer2=Math.max(smBase2+smBonus2,35);
+    const pb2=closed.filter(w=>(w.sKey||'unknown')===poutKey);
+    const smPer2=rewardPerInstr(pb2,s2);
     $('po-amt').value=(Math.round((smPer2*smN2)/0.5)*0.5).toFixed(2);
   }else if(t==='hourly'){
     const h=parseFloat($('po-hrs').value)||5;
@@ -5493,11 +5543,14 @@ function rAnalyzy(){
 
 // ══ PAYOUT READONLY — auto-calculated, only admin can edit ══
 function openCloseSessPay(key,tot){
-  const suggested=Math.round((30+tot*0.01)/0.5)*0.5;
+  const pb=closed.filter(w=>(w.sKey||'unknown')===key);
+  const sess=sessArr.find(s=>s.key===key)||buildSessMap()[key];
+  const per=rewardPerInstr(pb,sess);const n=Math.max(1,getSessionInstructors(sess).length);
+  const suggested=Math.round((per*n)/0.5)*0.5;
   const cpEl=$('cs-pay');const editBtn=$('cs-pay-edit-btn');const formula=$('cs-pay-formula');
   if(cpEl){cpEl.value=suggested;cpEl.readOnly=!admUnlocked;}
   if(editBtn)editBtn.style.display=admUnlocked?'inline-flex':'none';
-  if(formula)formula.textContent=`30€ + 1% z ${fp(tot)} = ${fp(30+tot*0.01)} → zaokr. na 0.5€ = ${fp(suggested)}`;
+  if(formula)formula.textContent=`Pevná odmena podľa aktivity: ${fp(per)} / inštruktor${n>1?` × ${n} = ${fp(per*n)}`:''}`;
 }
 function unlockPayEdit(){const e=$('cs-pay');if(e){e.readOnly=false;e.focus();toast('Odmena editovateľná');}}
 
@@ -7378,7 +7431,7 @@ const LANG={
     'prod-Nákoleníky':'Knee pads','prod-Topánky':'Shoes','prod-Rukavice':'Gloves',
     'prod-Extra hodina (pá-ne)':'Extra hour (Fri–Sun)','prod-Extra hodina (po-št)':'Extra hour (Mon–Thu)',
     'prod-Balík Basic':'Basic Package','prod-Balík Classic':'Classic Package','prod-Balík Ultra':'Ultra Package','prod-Balík Pro':'Pro Package',
-    'prod-Agentúra PB':'Agency PB','prod-Ammo 100 ks (PB)':'Ammo 100 pcs (PB)',
+    'prod-Agentúra PB':'Agency PB','prod-Agentúra AS':'Agency AS','prod-Ammo 100 ks (PB)':'Ammo 100 pcs (PB)',
     'prod-Záloha':'Deposit','prod-Poukaz':'Voucher',
     'manual-id':'manual','nfc-connect':'🔌 Connect Reader',
     'close-sess-title':'🏁 Close Game','instructor-reward':'Instructor reward (€)',
@@ -7622,6 +7675,10 @@ function buildTimeStr(ded, sess, grpBills){
   const _now=new Date();
   aFrom=new Date(_now.getFullYear(),_now.getMonth(),1);
   aTo=null;
+
+  // ✅ Self-heal pri štarte: odober uzavreté akcie (s odmenou) zo sessArr,
+  //    keby tam zostali z predošlého pokazeného stavu (uzavretá akcia stále otvorená).
+  if(_pruneClosedFromSessArr()>0)saveAll();
 
   // Show landing page — main entry point
   showLanding();
