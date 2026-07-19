@@ -3669,7 +3669,18 @@ function _proceedCloseBill(wbId){
     :`<div class="rr tot"><span>${t("total")}</span><span>${fp(billAmt(w))}</span></div>`);
   om('m-pay');
 }
-function selPay(m){payM=m;$('po-c').className='po'+(m==='cash'?' cash':'');$('po-k').className='po'+(m==='card'?' card':'');$('po-f').className='po'+(m==='invoice'?' invoice':'');const b=$('pay-btn');b.disabled=false;b.style.opacity='1';}
+function selPay(m){
+  // ✅ Faktúra: štandardne len agentúra. Pre bežného hráča je to raritná situácia —
+  //    vyžaduje potvrdenie admina, inak účet ostáva otvorený.
+  if(m==='invoice'){
+    const wbs=getWbs();const w=wbs.find(x=>x.id===pendClose);
+    if(w&&!isAgencyWb(w)){
+      if(!isAdmin()){toast('🧾 Faktúra je len pre agentúrne akcie. Bežnému hráčovi ju môže povoliť len admin.');return;}
+      if(!confirm('Bežný (ne-agentúrny) hráč — naozaj uzavrieť na faktúru?\n\nÚčet skončí v neuhradených faktúrach.'))return;
+    }
+  }
+  payM=m;$('po-c').className='po'+(m==='cash'?' cash':'');$('po-k').className='po'+(m==='card'?' card':'');$('po-f').className='po'+(m==='invoice'?' invoice':'');const b=$('pay-btn');b.disabled=false;b.style.opacity='1';
+}
 
 // ══ AGENCY PB PAYMENT ══
 // Design: extras are paid immediately (card/cash) and REMOVED from the bill.
@@ -5253,7 +5264,8 @@ function rAnalyzy(){
     // Vouchers → grouped summary, not product rows
     if(it.isVoucher||it.id===36){vouchCount+=it.qty;vouchAmt+=Math.abs(it.price)*it.qty;return;}
     const key=it.name;
-    if(!prodStats[key])prodStats[key]={name:key,cat:it.cat||'Other',count:0,rev:0};
+    // ✅ Kategória z katalógu produktov (položky účtu ju nenesú → všade bolo "Other")
+    if(!prodStats[key])prodStats[key]={name:key,cat:(prodRef&&prodRef.cat)||it.cat||'Other',count:0,rev:0};
     prodStats[key].count+=it.qty;
     prodStats[key].rev+=it.price*it.qty*(1-(it.disc||0)/100);
   }));
