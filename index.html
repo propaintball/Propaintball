@@ -5243,10 +5243,15 @@ function rAnalyzy(){
 
   // ── PIE CHART — individual products by count AND revenue (exclude deposit) ──
   const prodStats={};
+  // ✅ Poukazy: NIE sú stratová položka (peniaze prišli pri predaji poukazu) —
+  //    zgrupujú sa do jedného súhrnu namiesto N záporných riadkov "Poukaz #..."
+  let vouchCount=0,vouchAmt=0;
   bills.forEach(w=>w.items.forEach(it=>{
     // Exclude deposit product from analytics
     const prodRef=prods.find(p=>p.id===it.id);
     if(prodRef&&prodRef.isDeposit)return;
+    // Vouchers → grouped summary, not product rows
+    if(it.isVoucher||it.id===36){vouchCount+=it.qty;vouchAmt+=Math.abs(it.price)*it.qty;return;}
     const key=it.name;
     if(!prodStats[key])prodStats[key]={name:key,cat:it.cat||'Other',count:0,rev:0};
     prodStats[key].count+=it.qty;
@@ -5311,7 +5316,13 @@ function rAnalyzy(){
         <td style="text-align:center;padding:4px 6px;">100%</td>
         <td style="text-align:right;padding:4px 6px;color:var(--grn);">${fp(totalRev)}</td>
       </tr>
-    </table>`:'<div class="empty">Žiadne produkty</div>';
+    </table>${vouchAmt>0?`<div style="margin-top:8px;background:var(--tbg);border:.5px solid var(--tbd);border-radius:var(--rs);padding:9px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--tel);">🎫 Poukazy uplatnené: ${vouchCount} ks · ${fp(vouchAmt)}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px;">Peniaze prijaté vopred pri predaji poukazu — nie je to strata. Časť obratu krytá poukazmi.</div>
+      </div>
+      <div style="font-size:16px;font-weight:800;color:var(--tel);white-space:nowrap;">${totalRev>0?(vouchAmt/totalRev*100).toFixed(1):0}% z obratu</div>
+    </div>`:''}`:'<div class="empty">Žiadne produkty</div>';
   }
 
   // ── MONTHLY BAR — last 6 months ──
@@ -6011,10 +6022,16 @@ function rLandingSessions(){
   el.style.display='block';
   el.innerHTML='<div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px;">Aktívne hry</div>'+
     sessArr.map(s=>{const ww=wbMap[s.key]||[];
-      return`<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--card);border-radius:var(--rs);border:.5px solid var(--b1);margin-bottom:6px;">
+      // ✅ Stará neuzavretá akcia (>20h) — výrazné varovanie, aby nemiatla ako "dnešná"
+      const ageMs=s.startedAt?Date.now()-new Date(s.startedAt).getTime():0;
+      const isStale=ageMs>20*3600000;
+      const ageDays=Math.floor(ageMs/86400000);
+      const ageLbl=ageDays>0?ageDays+'d':Math.floor(ageMs/3600000)+'h';
+      const staleBadge=isStale?`<span style="font-size:9px;background:var(--abg);color:var(--amb);border:.5px solid var(--abd);border-radius:99px;padding:1px 7px;font-weight:700;margin-left:5px;">⚠️ neuzavretá ${ageLbl}</span>`:'';
+      return`<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--card);border-radius:var(--rs);border:.5px solid ${isStale?'var(--abd)':'var(--b1)'};margin-bottom:6px;${isStale?'opacity:.8;':''}">
         <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:600;">${escHtml(s.arena)} · ${escHtml(s.activity)}${sessRunSuffix(s)}</div>
-          <div style="font-size:10px;color:var(--t3);">${s.date} ${s.time} · ${escHtml(s.instructor)} · ${ww.length} hráčov</div>
+          <div style="font-size:13px;font-weight:600;">${escHtml(s.arena)} · ${escHtml(s.activity)}${sessRunSuffix(s)}${staleBadge}</div>
+          <div style="font-size:10px;color:${isStale?'var(--amb)':'var(--t3)'};">${s.date} ${s.time} · ${escHtml(s.instructor)} · ${ww.length} hráčov</div>
         </div>
         <button class="btn sm B" onclick="resumeFromLanding('${s.key}')">Pokračovať →</button>
       </div>`;
@@ -6709,7 +6726,13 @@ async function fetchReservationsForDate(date,forceRefresh=false){
     }
     const data=await r.json();
     const events=(data.items||[]).filter(ev=>ev.status!=='cancelled');
-    _calReservations=events.map(ev=>parseCalEvent(ev));
+    // ✅ Zobraz len eventy ktoré ZAČÍNAJÚ v zobrazovaný deň — nočná akcia z predošlého dňa
+    //    (napr. 22:00–01:00) by inak "pretiekla" do dnešného zoznamu a pôsobila ako dnešná.
+    //    Včerajšie eventy sú stále dostupné šípkou ‹.
+    _calReservations=events.map(ev=>parseCalEvent(ev)).filter(r=>{
+      if(!r.start)return true;
+      return new Date(r.start).toDateString()===date.toDateString();
+    });
     updateCalWarnings(events);
     if(isToday)LS.s('pb_cal_cache',{ts:Date.now(),data:_calReservations});
     // Načítaj počty prihlásených pre všetky eventy naraz (1 API call)
@@ -6791,6 +6814,8 @@ function rLandingReservations(){
     const isRunning=startTime&&endTime&&now>=startTime&&now<=endTime;
     const isPastEvent=endTime?now>endTime:(startTime?now>startTime:false);
     const existingSess=sessArr.find(s=>s.calEventId===r.eventId);
+    // ✅ Akcia už bola uzavretá v pokladni (sync-back zapísal do popisu eventu)
+    const isClosedDone=/Akcia uzavretá/.test(r.description||'');
 
     const timeStr=startTime?startTime.toLocaleTimeString('sk',{hour:'2-digit',minute:'2-digit'}):'—';
     const endStr=endTime?endTime.toLocaleTimeString('sk',{hour:'2-digit',minute:'2-digit'}):'';
@@ -6805,6 +6830,7 @@ function rLandingReservations(){
     // Right side indicator
     let rightEl='<span style="color:var(--t3);font-size:16px;font-weight:300;">›</span>';
     if(existingSess)rightEl=`<span style="font-size:10px;color:var(--grn);font-weight:600;white-space:nowrap;">● Prebieha${sessRunSuffix(existingSess)}</span>`;
+    else if(isClosedDone)rightEl=`<span style="font-size:10px;background:var(--gbg);color:var(--grn);border:.5px solid var(--gbd);border-radius:99px;padding:2px 8px;font-weight:700;white-space:nowrap;">✅ Uzavretá</span>`;
     else if(isPastEvent&&isToday)rightEl=`<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">${runsDone>0?runBadge:''}<button onclick="event.stopPropagation();markCalNoShow('${r.eventId}')" style="background:none;border:.5px solid var(--b2);border-radius:6px;padding:3px 7px;font-size:10px;color:var(--t3);cursor:pointer;">No-show</button></div>`;
     else if(runsDone>0)rightEl=`<span style="color:var(--t3);font-size:16px;font-weight:300;">›</span>${runBadge}`;
 
@@ -6817,7 +6843,7 @@ function rLandingReservations(){
     const depBadge=r.depositPaid?`<span style="font-size:9px;background:#0d2e1a;color:var(--grn);border-radius:99px;padding:1px 5px;font-weight:700;margin-left:3px;">💰 záloha</span>`:'';
     const noteBadge=r.hasNote?`<span style="font-size:9px;background:var(--abg);color:var(--amb);border-radius:99px;padding:1px 5px;font-weight:700;margin-left:3px;">⚠️ pozn.</span>`:'';
 
-    const cardStyle=`display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--rs);border:.5px solid ${r.depositPaid?'var(--gbd)':r.hasNote?'var(--abd)':'var(--b1)'};margin-bottom:5px;cursor:pointer;${isPastEvent?'opacity:.55;':''}`;
+    const cardStyle=`display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--rs);border:.5px solid ${isClosedDone?'var(--gbd)':r.depositPaid?'var(--gbd)':r.hasNote?'var(--abd)':'var(--b1)'};margin-bottom:5px;cursor:pointer;${isPastEvent||isClosedDone?'opacity:.5;':''}`;
 
     return`<div style="${cardStyle}" onclick="startSessFromReservation(_calReservations[${i}])" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='var(--bg3)'">
       <span style="width:7px;height:7px;border-radius:50%;background:${dotC};flex-shrink:0;"></span>
