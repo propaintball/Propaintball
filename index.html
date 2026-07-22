@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<!-- ✅ Anti-cache: bez toho Safari/PWA drží starú verziu aj po nahratí novej na GitHub -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
 <!-- iOS PWA -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -273,6 +277,7 @@ textarea{resize:none;line-height:1.5;}
     <button onclick="toggleLang()" style="position:absolute;top:calc(var(--st)+12px);right:16px;background:transparent;border:.5px solid var(--b2);border-radius:6px;padding:2px 7px;font-size:14px;cursor:pointer;" id="landing-lang-btn" title="Switch language">🇸🇰</button>
     <img src="https://www.propaintball.sk/wp-content/themes/propaintball/img/propaintball-logo-negative.svg" alt="ProPaintball" style="height:50px;margin-bottom:8px;" onerror="this.style.display='none'"/>
     <div style="font-size:12px;color:var(--t3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px;" data-i18n="sys-title">Pokladničný systém</div>
+    <div id="app-version-lbl" style="font-size:10px;color:var(--t3);opacity:.6;margin-bottom:4px;"></div>
     <!-- User badge -->
     <div id="landing-user" style="display:none;margin-top:8px;display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;">
       <div style="background:var(--gbg);border:.5px solid var(--gbd);border-radius:99px;padding:5px 14px;font-size:12px;color:var(--grn);display:inline-flex;align-items:center;gap:6px;">
@@ -1119,6 +1124,9 @@ function checkStorageQuota(){
 }
 function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);LS.s('pb_nid',nextId);LS.s('pb_nfc',nfcN);LS.s('pb_ar',arenas);LS.s('pb_ins',instructors);LS.s('pb_ac',activities);LS.s('pb_ss',sessArr);LS.s('pb_cid',curSid);LS.s('pb_biz',biz);LS.s('pb_sbu',sbUrl);LS.s('pb_sbk',sbKey);LS.s('pb_hr',hrRate);LS.s('pb_adm',admPw);LS.s('pb_arch',archive);checkStorageQuota();}
 // ══ STATE ══
+// ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
+//    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
+const APP_VERSION='2026.07.22';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -7940,6 +7948,9 @@ function buildTimeStr(ded, sess, grpBills){
   // ✅ Self-heal pri štarte: odober uzavreté akcie (s odmenou) zo sessArr,
   //    keby tam zostali z predošlého pokazeného stavu (uzavretá akcia stále otvorená).
   if(_pruneClosedFromSessArr()>0)saveAll();
+
+  // ✅ Zobraz verziu — okamžitá kontrola, či beží nová verzia alebo cache
+  const _vEl=$('app-version-lbl');if(_vEl)_vEl.textContent='v'+APP_VERSION;
 
   // Show landing page — main entry point
   showLanding();
