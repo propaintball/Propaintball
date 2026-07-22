@@ -781,6 +781,22 @@ textarea{resize:none;line-height:1.5;}
           </div>
           <div id="cust-list" style="max-height:400px;overflow-y:auto;"></div>
         </div>
+        <!-- Problémoví zákazníci — no-show / rušenie (presunuté zo Správcu) -->
+        <div class="card" style="border-color:var(--rbd);">
+          <div class="ch" style="color:var(--red);">🚫 Správanie zákazníkov — no-show / rušenie</div>
+          <div style="font-size:10px;color:var(--t3);margin-bottom:8px;line-height:1.6;">
+            Plní sa z Google kalendára — akcie označené <strong style="color:var(--red);">červenou</strong> (aj sivou z tlačidla No-show).
+            Dôvod sa číta z popisu eventu:
+            <span style="color:var(--red);">🚫 neprišli</span> a <span style="color:var(--red);">❌ zrušené neskoro</span> sa rátajú ako chyba klienta;
+            <span style="color:var(--blu);">↩️ zrušené 48h+</span>, <span style="color:var(--blu);">🌧 počasie</span> a <span style="color:var(--blu);">📅 presunuté</span> sa <strong>nerátajú</strong>.
+            Podklad pri rezervácii — či žiadať zálohu vopred. Po skene sa zoznam odošle aj ProPaintballBotovi.
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+            <button class="btn sm B" onclick="scanCalWarnings(90)" title="Prejde posledných 90 dní v kalendári a prepočíta zoznam">🔍 Skenovať 90 dní</button>
+            <button class="btn sm" onclick="clearAllCalWarnings()">🗑 Vymazať zoznam</button>
+          </div>
+          <div id="cust-warnings"></div>
+        </div>
         <!-- Customer Edit Modal moved to body level -->
         <!-- NFC Analysis -->
         <div class="card" style="border-color:var(--abd);">
@@ -4110,10 +4126,13 @@ function rOpen(){
   // ✅ FIX: Get wristbands from ALL active sessions (not just curSid)
   const wbs=sessArr.flatMap(s=>(wbMap[s.key]||[]));
 
-  // ── AKTÍVNI HRÁČI — zoskupení pod hrou (accordion) ──
-  if(wbs.length){
-    // Group wristbands by session
+  // ── AKTÍVNE HRY — zoskupené pod hrou (accordion) ──
+  // ✅ FIX: rendruje sa každá aktívna akcia, AJ tá bez hráčov — inak bola "zabudnutá"
+  //    akcia (0 hráčov) v Otvorených neviditeľná a nedala sa uzavrieť.
+  if(sessArr.length){
+    // Group wristbands by session — seed všetkými aktívnymi akciami (aj prázdnymi)
     const sessGroups={};
+    sessArr.forEach(s=>{sessGroups[s.key]=[];});
     wbs.forEach(w=>{
       const k=w.sKey||curSid||'unknown';
       if(!sessGroups[k])sessGroups[k]=[];
@@ -4126,21 +4145,26 @@ function rOpen(){
       const ded=de[sKey]||{};
       const arena=sess?.arena||'Neznámy areál';
       const act=sess?.activity||'—';
-      const instr=instrLabel(sess)||fw?.sInstr||'—';
+      const instr=instrLabel(sess)||'—'; // ✅ fw tu neexistoval — ReferenceError landmine
       const timeStr=ded.st||sess?.time||'';
       const dateStr=ded.sd||sess?.date||'';
       const grpTot=grpWbs.reduce((s,w)=>s+totalAmt(w),0);
       const openCount=grpWbs.filter(w=>billAmt(w)>0).length;
       const paidCount=grpWbs.length-openCount;
-      // Start expanded if it's current session
-      const isActive=sKey===curSid;
+      // ✅ Zabudnutá akcia: bez hráčov a staršia ako 20h
+      const sAgeMs=sess?.startedAt?Date.now()-new Date(sess.startedAt).getTime():0;
+      const isStale=sAgeMs>20*3600000;
+      const staleLbl=sAgeMs>86400000?Math.floor(sAgeMs/86400000)+'d':Math.floor(sAgeMs/3600000)+'h';
+      const isEmpty=grpWbs.length===0;
+      // Rozbalené ak je to aktuálna akcia ALEBO je prázdna (nech je vidno tlačidlo na uzavretie)
+      const isActive=sKey===curSid||isEmpty;
       html+=`
       <div class="game-row" style="margin-bottom:10px;">
         <!-- Hlavička hry — kliknuteľná pre rozbaliť/zbaliť -->
         <div class="game-row-header" onclick="togGrp('op-grp-${gi}')" style="cursor:pointer;user-select:none;">
           <div class="game-strip ${(act.toLowerCase().includes('airsoft')?'game-strip-as':act.toLowerCase().includes('lasertag')?'game-strip-other':'game-strip-pb')}"></div>
           <div class="game-info">
-            <div class="game-title">${escHtml(arena)} · ${escHtml(act)}</div>
+            <div class="game-title">${escHtml(arena)} · ${escHtml(act)}${isStale?` <span style="font-size:9px;background:var(--abg);color:var(--amb);border:.5px solid var(--abd);border-radius:99px;padding:1px 6px;font-weight:700;">⚠️ neuzavretá ${staleLbl}</span>`:''}</div>
             <div class="game-meta">${dateStr} ${timeStr} · ${escHtml(instr)}</div>
           </div>
           <div class="game-stats">
@@ -4181,11 +4205,15 @@ function rOpen(){
               </div>
             </div>`;
           }).join('')}
+          ${isEmpty?`<div style="padding:14px 12px;text-align:center;font-size:12px;color:var(--t3);">
+            Žiadni hráči v tejto akcii.${isStale?' <span style="color:var(--amb);font-weight:600;">Vyzerá to na zabudnutú akciu.</span>':''}
+            ${isAdmin()?'<br><span style="font-size:11px;">Uzavri ju tlačidlom nižšie 👇</span>':'<br><span style="font-size:11px;">Uzavrieť ju môže admin.</span>'}
+          </div>`:''}
           <!-- Skupinové akcie pod hráčmi -->
           <div style="padding:8px 10px;background:var(--bg3);border-top:.5px solid var(--b1);display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
             <button class="btn sm B" onclick="event.stopPropagation();gT('reg')">${t('add-player-open')}</button>
             ${isActive&&grpWbs.length>0?`<button class="btn sm G" onclick="event.stopPropagation();payAll()">${t('pay-all-open')}</button>`:''}
-            ${isAdmin()?`<button class="btn sm" onclick="event.stopPropagation();adminForceCloseSess('${sKey}')" style="margin-left:auto;background:var(--rbg);border-color:var(--rbd);color:var(--red);font-size:10px;" title="Zabudnutá hra — admin uzavretie">🗑 Zabudnutá hra</button>`:''}
+            ${isAdmin()?`<button class="btn sm" onclick="event.stopPropagation();adminForceCloseSess('${sKey}')" style="margin-left:auto;background:var(--rbg);border-color:var(--rbd);color:var(--red);font-size:${isEmpty?'11px':'10px'};${isEmpty?'font-weight:700;':''}" title="Zabudnutá hra — admin uzavretie">🗑 ${isEmpty?'Uzavrieť zabudnutú akciu':'Zabudnutá hra'}</button>`:''}
           </div>
         </div>
       </div>`;
@@ -4198,6 +4226,8 @@ function rOpen(){
         <span style="font-size:15px;font-weight:700;color:var(--grn);">${fp(allTot)}</span>
       </div>`+html;
     }
+    // ✅ Ak v žiadnej akcii nie sú hráči, doplň pod ne aj "Nová hra" + posledné uzavreté hry
+    if(!wbs.length)html+=_openPaidTailHtml();
     el.innerHTML=html;
     updMBtn();
     return;
@@ -4215,7 +4245,13 @@ function rOpen(){
     return;
   }
 
-  // Všetci zaplatení
+  el.innerHTML=_openPaidTailHtml();
+  if(typeof updMBtn==='function')updMBtn();
+}
+
+// "Všetci hráči zaplatení" + Nová hra + posledné uzavreté hry
+// (vyčlenené, aby sa dalo pripojiť aj pod zoznam aktívnych akcií bez hráčov)
+function _openPaidTailHtml(){
   let html=`<div style="padding:14px 11px 6px;">
     <div style="font-size:13px;font-weight:600;color:var(--grn);margin-bottom:12px;text-align:center;">✅ Všetci hráči zaplatení</div>
     <button class="btn G" style="width:100%;font-size:15px;padding:14px;border-radius:14px;flex-direction:column;gap:6px;" onclick="goNewGame()">
@@ -4251,8 +4287,7 @@ function rOpen(){
       });
     }
   }
-  el.innerHTML=html;
-  if(typeof updMBtn==='function')updMBtn();
+  return html;
 }
 
 function setF(mode,el){
@@ -4906,29 +4941,10 @@ function rSpravca(){
   const srevEl=$('srev-s');
   if(srevEl)srevEl.innerHTML=`<div class="rb"><div class="rbv" style="color:var(--grn);">${fp(tot)}</div><div class="rbl">Celkom</div></div>${sTotalDep>0?`<div class="rb" style="background:var(--gbg);border:.5px solid var(--gbd);"><div class="rbv" style="color:var(--grn);">${fp(sTotalDep)}</div><div class="rbl">💰 Zálohy</div></div><div class="rb" style="background:var(--abg);border:.5px solid var(--abd);"><div class="rbv" style="color:var(--amb);">${fp(cash-sTotalDep)}</div><div class="rbl">💵 Hotovosť po odpočítaní záloh</div></div>`:''}<div class="rb"><div class="rbv" style="color:var(--grn);">${fp(cash)}</div><div class="rbl">💵 Hotovosť</div></div><div class="rb"><div class="rbv" style="color:var(--blu);">${fp(card)}</div><div class="rbl">💳 Karta</div></div>${sVouchTot>0?`<div class="rb" style="background:var(--tbg);border:.5px solid var(--tbd);"><div class="rbv" style="color:var(--tel);">${fp(sVouchTot)}</div><div class="rbl">🎫 Poukazy uplatnené</div></div>`:''}${invPaid>0?`<div class="rb" style="background:var(--pbg);border:.5px solid var(--pbd);"><div class="rbv" style="color:var(--pur);">${fp(invPaid)}</div><div class="rbl">🧾 Faktúra uhradená</div></div>`:''} ${invUnpaid>0?`<div class="rb" style="background:var(--abg);border:.5px solid var(--abd);"><div class="rbv" style="color:var(--amb);">${fp(invUnpaid)}</div><div class="rbl">🧾 Faktúra neuhradená</div></div>`:''} ${(totPay+totCosts)>0?`<div class="rb" style="grid-column:1/-1;background:var(--abg);border:.5px solid var(--abd);"><div class="rbv" style="color:var(--amb);">${fp(cash-totPay-totCosts)}</div><div class="rbl">💵 Čistá hotovosť</div></div>`:''}  `;
 
-  // Calendar warning list
-  const warnings=LS.g('pb_cal_warnings',{});
-  const warnEntries=Object.values(warnings).filter(w=>w.count>=1).sort((a,b)=>b.count-a.count);
+  // ✅ Zoznam problémových zákazníkov (no-show) presunutý do Nastavenia → Zákazníci.
+  //    V Správcovi nepatril: nesúvisí s tržbami a ignoroval časový filter obdobia.
   const warnEl=$('spravca-cal-warnings');
-  if(warnEl){
-    if(warnEntries.length>0){
-      warnEl.style.display='block';
-      warnEl.innerHTML=`<div class="card" style="border-color:var(--rbd);margin-bottom:10px;">
-        <div class="ch" style="color:var(--red);">⚠️ Varovania — opakované no-show / rušenie (${warnEntries.length})</div>
-        ${warnEntries.map(w=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:.5px solid var(--b1);">
-          <span style="background:${w.count>=2?'var(--red)':'var(--amb)'};color:#fff;border-radius:99px;padding:1px 8px;font-size:11px;font-weight:700;min-width:22px;text-align:center;">${w.count}</span>
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:12px;font-weight:600;">${escHtml(w.name)}</div>
-            <div style="font-size:10px;color:var(--t3);">${w.email?escHtml(w.email):''}${w.phone?` · ${escHtml(w.phone)}`:''}</div>
-          </div>
-          <button class="btn xs R" onclick="clearCalWarning('${(w.email||w.phone||'').replace(/'/g,'')}')" style="font-size:10px;">Zmazať</button>
-        </div>`).join('')}
-        <button class="btn sm" style="margin-top:8px;" onclick="clearAllCalWarnings()">🗑 Zmazať všetky varovania</button>
-      </div>`;
-    }else{
-      warnEl.style.display='none';
-    }
-  }
+  if(warnEl)warnEl.style.display='none';
   if(!bills.length){el.innerHTML='<div class="empty" style="padding:2rem;">Žiadne akcie za vybrané obdobie</div>';return;}
 
   // Group by session
@@ -5874,7 +5890,7 @@ function rSL(cid,arr,type){$(cid).innerHTML=arr.map((it,i)=>`<div class="si" sty
 function delSI(t,i){if(t==='arena')arenas.splice(i,1);else if(t==='instructor')instructors.splice(i,1);else if(t==='activity')activities.splice(i,1);save();rSL(t==='arena'?'al-l':t==='instructor'?'il-l':'acl-l',t==='arena'?arenas:t==='instructor'?instructors:activities,t);}
 function addSI(t){const ids={arena:'na',instructor:'ni',activity:'nac'};const v=$(ids[t]).value.trim();if(!v)return;if(t==='arena')arenas.push(v);else if(t==='instructor')instructors.push(v);else if(t==='activity')activities.push(v);$(ids[t]).value='';save();rSL(t==='arena'?'al-l':t==='instructor'?'il-l':'acl-l',t==='arena'?arenas:t==='instructor'?instructors:activities,t);}
 function saveBiz(){biz={name:$('biz-n').value.trim(),ico:$('biz-ico').value.trim(),dic:$('biz-dic').value.trim(),addr:$('biz-a').value.trim()};save();toast('Firemné údaje uložené');}
-function fillSett(){const su=$('sb-u'),sk=$('sb-k');if(su&&sbUrl)su.value=sbUrl;if(sk&&sbKey)sk.value=sbKey;const gdc=$('gdrive-client-id');if(gdc)gdc.value=LS.g('pb_gdrive_client_id','');updateGDriveStatus();const calIdEl=$('cal-calendar-id');if(calIdEl)calIdEl.value=LS.g('pb_cal_id','');updateCalStatus();const hr=$('hr-rate');if(hr)hr.value=hrRate;['biz-n','biz-ico','biz-dic','biz-a'].forEach((f,i)=>{const e=$(f);if(e&&biz[['name','ico','dic','addr'][i]])e.value=biz[['name','ico','dic','addr'][i]];});renderCustList();}
+function fillSett(){const su=$('sb-u'),sk=$('sb-k');if(su&&sbUrl)su.value=sbUrl;if(sk&&sbKey)sk.value=sbKey;const gdc=$('gdrive-client-id');if(gdc)gdc.value=LS.g('pb_gdrive_client_id','');updateGDriveStatus();const calIdEl=$('cal-calendar-id');if(calIdEl)calIdEl.value=LS.g('pb_cal_id','');updateCalStatus();const hr=$('hr-rate');if(hr)hr.value=hrRate;['biz-n','biz-ico','biz-dic','biz-a'].forEach((f,i)=>{const e=$(f);if(e&&biz[['name','ico','dic','addr'][i]])e.value=biz[['name','ico','dic','addr'][i]];});renderCustList();renderCustWarnings();}
 // ══ MODALS ══
 function om(id){
   $(id).classList.add('op');
@@ -6639,9 +6655,42 @@ function parseCalEvent(ev){
   // ── POZOR: poznámka v názve alebo popise ──
   const noteKeywords=/\bpozn\.?\b|poznámka|poznamka|čítaj|citaj/i;
   const hasNote=noteKeywords.test(fullText);
+
+  // ── Kontaktné údaje z popisu ──
+  // ✅ Parsuje sa TU (pred early-returns), aby aj zrušené eventy s neštandardným
+  //    názvom (napr. "[ZRUŠENÉ] OUT PB16 DE") mali email/telefón → inak boli
+  //    v zozname správania klienta neviditeľné.
+  const descText=description.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'');
+  const descLines=descText.split('\n').map(l=>l.trim()).filter(l=>l&&!l.startsWith('✅')&&!l.startsWith('❌')&&!l.startsWith('🤖')&&!l.startsWith('Hráči:')&&!l.startsWith('Players:'));
+  let custName='',custEmail='',custPhone='';
+  for(const line of descLines){
+    // Strip "Label: value" prefix — e.g. "Meno a priezvisko: Michal Test" → "Michal Test"
+    const colPos=line.indexOf(':');
+    const stripped=(colPos>0&&colPos<40&&!line.slice(0,colPos).includes('@')&&!/\d/.test(line.slice(0,colPos)))?line.slice(colPos+1).trim():line.trim();
+    if(!custEmail&&(stripped.includes('@')||line.includes('@')))custEmail=stripped.includes('@')?stripped:line.trim();
+    else if(!custPhone&&/^[\+\d\s\-\(\)]{6,}$/.test(stripped))custPhone=stripped;
+    else if(!custName&&stripped.length>1)custName=stripped;
+  }
+
+  // ── SPRÁVANIE KLIENTA — dôvod zrušenia / neúčasti ──
+  // Tím značí problémový event v GCal ČERVENOU (colorId 10) a dôvod píše do popisu.
+  // Rozlišujeme, či je to chyba klienta (no-show, neskoré zrušenie) alebo nie (počasie, 48h+).
+  const _dia=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const ftN=_dia(summary+' '+description);
+  const isRed=(colorId==='10');
+  let problemCat='',problemFault=false;
+  if(/pocasi|dazd|dazdi|prsi|prsa|vietor|blato|zima|snah|snez|weather|rain/.test(ftN)){problemCat='weather';}
+  else if(/48\s*h|viac ako 48|vratena zaloha|vratili zalohu|vratena\s*zal|vyrefundov|refundov|refund/.test(ftN)){problemCat='cancel_48h';}
+  else if(/neprisl|neprisi|nedostavil|nepristup|no\s*-?\s*show|nedorazil/.test(ftN)){problemCat='no_show';problemFault=true;}
+  else if(/presunut|prelozen|posunut/.test(ftN)){problemCat='moved';}
+  else if(/zrusen|storno|cancel/.test(ftN)){problemCat='cancelled';problemFault=true;}
+  else if(isRed||colorId==='11'){problemCat='other';problemFault=true;}
+  // Problémový = červený/sivý event ALEBO jednoznačný textový dôvod
+  const isProblem=!!problemCat&&(isRed||colorId==='11'||problemCat==='no_show');
+
   // Arena: first word — map shortcodes to exact arena names from settings
   const parts=summary.trim().split(/\s+/);
-  if(!parts.length)return{eventId,summary,description,start,end,status,colorId,depositPaid,hasNote,isNonStandard:true,parsed:false,arena:'',arenaCode:'',activity:'',players:0,lang:'sk',zfa:null,instructor:'',custName:'',custEmail:'',custPhone:''};
+  if(!parts.length)return{eventId,summary,description,start,end,status,colorId,depositPaid,hasNote,problemCat,problemFault,isProblem,isNonStandard:true,parsed:false,arena:'',arenaCode:'',activity:'',players:0,lang:'sk',zfa:null,instructor:'',custName,custEmail,custPhone};
   const arenaRaw=parts[0];
   let arena='',arenaCode='';
   if(/^(RC|Racoon|Raccoon)/i.test(arenaRaw)){
@@ -6670,7 +6719,7 @@ function parseCalEvent(ev){
     lang=(actMatch[3]||'sk').toLowerCase();
     afterAct=afterArena.slice(actMatch[0].length).trim();
   }else{
-    return{eventId,summary,description,start,end,status,colorId,depositPaid,hasNote,isNonStandard:true,parsed:false,arena,arenaCode,activity:'',players:0,lang:'sk',zfa:null,instructor:'',custName:'',custEmail:'',custPhone:''};
+    return{eventId,summary,description,start,end,status,colorId,depositPaid,hasNote,problemCat,problemFault,isProblem,isNonStandard:true,parsed:false,arena,arenaCode,activity:'',players:0,lang:'sk',zfa:null,instructor:'',custName,custEmail,custPhone};
   }
   // ZFA
   let zfa=null;
@@ -6699,19 +6748,8 @@ function parseCalEvent(ev){
     }):null;
     if(m2)instructor=m2;else if(m1)instructor=m1;else if(mFuzzy)instructor=mFuzzy;else instructor=last2||last1;
   }
-  // Parse description for customer data
-  const descText=description.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'');
-  const descLines=descText.split('\n').map(l=>l.trim()).filter(l=>l&&!l.startsWith('✅')&&!l.startsWith('❌')&&!l.startsWith('🤖')&&!l.startsWith('Hráči:')&&!l.startsWith('Players:'));
-  let custName='',custEmail='',custPhone='';
-  for(const line of descLines){
-    // Strip "Label: value" prefix — e.g. "Meno a priezvisko: Michal Test" → "Michal Test"
-    const colPos=line.indexOf(':');
-    const stripped=(colPos>0&&colPos<40&&!line.slice(0,colPos).includes('@')&&!/\d/.test(line.slice(0,colPos)))?line.slice(colPos+1).trim():line.trim();
-    if(!custEmail&&(stripped.includes('@')||line.includes('@')))custEmail=stripped.includes('@')?stripped:line.trim();
-    else if(!custPhone&&/^[\+\d\s\-\(\)]{6,}$/.test(stripped))custPhone=stripped;
-    else if(!custName&&stripped.length>1)custName=stripped;
-  }
-  return{eventId,summary,description,start,end,status,colorId,depositPaid,hasNote,isNonStandard:false,parsed:true,arena,arenaCode,activity,players,lang,zfa,instructor,custName,custEmail,custPhone};
+  // (kontakty custName/custEmail/custPhone sa parsujú vyššie, pred early-returns)
+  return{eventId,summary,description,start,end,status,colorId,depositPaid,hasNote,problemCat,problemFault,isProblem,isNonStandard:false,parsed:true,arena,arenaCode,activity,players,lang,zfa,instructor,custName,custEmail,custPhone};
 }
 
 async function fetchTodayReservations(forceRefresh=false){
@@ -6766,20 +6804,48 @@ function calNavDate(delta){
   fetchReservationsForDate(_calViewDate,true);
 }
 
+// Kategórie správania klienta — dôvod zrušenia/neúčasti z GCal popisu
+const PROBLEM_CATS={
+  no_show:   {lbl:'Neprišli',            icon:'🚫', col:'var(--red)', fault:true},
+  cancelled: {lbl:'Zrušené (neskoro)',   icon:'❌', col:'var(--red)', fault:true},
+  other:     {lbl:'Označené červenou',   icon:'⚠️', col:'var(--amb)', fault:true},
+  cancel_48h:{lbl:'Zrušené 48h+ (záloha vrátená)', icon:'↩️', col:'var(--t2)', fault:false},
+  weather:   {lbl:'Zlé počasie',         icon:'🌧', col:'var(--blu)', fault:false},
+  moved:     {lbl:'Presunuté',           icon:'📅', col:'var(--blu)', fault:false},
+};
 function updateCalWarnings(events){
   const warnings=LS.g('pb_cal_warnings',{});
-  // Also check last 30 days — fetch from a wider range when we have red events today
-  events.filter(ev=>ev.colorId==='11').forEach(ev=>{
+  // ✅ FIX: tím značí problémové akcie ČERVENOU (colorId 10) — predtým sa hľadala
+  //    len sivá (11), takže ručné označenia boli pre systém neviditeľné.
+  //    Zbierame červené aj sivé, plus eventy s jednoznačným textovým dôvodom.
+  events.forEach(ev=>{
     const parsed=parseCalEvent(ev);
-    const key=parsed.custEmail||parsed.custPhone;if(!key)return;
-    if(!warnings[key])warnings[key]={count:0,name:parsed.custName||key,email:parsed.custEmail,phone:parsed.custPhone,events:[]};
-    const evRef={date:ev.start?.dateTime||ev.start?.date,summary:ev.summary};
-    if(!warnings[key].events.find(e=>e.date===evRef.date&&e.summary===evRef.summary)){
-      warnings[key].count++;
-      warnings[key].events.push(evRef);
+    if(!parsed.isProblem)return;
+    const key=(parsed.custEmail||parsed.custPhone||'').toLowerCase().trim();if(!key)return;
+    if(!warnings[key])warnings[key]={count:0,name:parsed.custName||key,email:parsed.custEmail,phone:parsed.custPhone,events:[],cats:{}};
+    const w=warnings[key];
+    if(!w.cats)w.cats={};
+    // doplň kontakt ak pribudol
+    if(!w.email&&parsed.custEmail)w.email=parsed.custEmail;
+    if(!w.phone&&parsed.custPhone)w.phone=parsed.custPhone;
+    const evRef={date:ev.start?.dateTime||ev.start?.date,summary:ev.summary,cat:parsed.problemCat||'other'};
+    const exist=w.events.find(e=>e.date===evRef.date&&e.summary===evRef.summary);
+    if(exist){exist.cat=evRef.cat;} // aktualizuj kategóriu ak sa popis medzitým doplnil
+    else{
+      w.events.push(evRef);
+      w.cats[evRef.cat]=(w.cats[evRef.cat]||0)+1;
+      if(parsed.problemFault)w.count++; // ✅ počíta sa len to, čo je chyba klienta
     }
   });
   LS.s('pb_cal_warnings',warnings);
+}
+// Vyhodnotenie klienta — počasie a 48h+ zrušenie sa NEráta ako problém
+function custRiskLevel(w){
+  const c=w.cats||{};
+  const bad=(c.no_show||0)+(c.cancelled||0)+(c.other||0);
+  if((c.no_show||0)>=2||bad>=3)return 'risk';
+  if(bad>=1)return 'watch';
+  return 'ok';
 }
 
 function getWarnCount(){
@@ -7118,21 +7184,130 @@ function deleteWbConfirm(){
 function clearCalWarning(key){
   const pw=prompt('Zadaj admin heslo pre potvrdenie zmazania:');
   if(pw===null)return;
-  if(pw!==admPw){toast('❌ Nesprávne heslo',true);return;}
+  if(!checkPw(pw,admPw)){toast('❌ Nesprávne heslo',true);return;} // ✅ podpora hashovaného hesla
   const warnings=LS.g('pb_cal_warnings',{});
   delete warnings[key];
   LS.s('pb_cal_warnings',warnings);
-  if($('p-spravca')?.classList.contains('on'))rSpravca();
-  toast('Varovanie zmazané');
+  renderCustWarnings();
+  toast('Záznam zmazaný');
 }
 
 function clearAllCalWarnings(){
-  const pw=prompt('Zadaj admin heslo pre zmazanie VŠETKÝCH varovaní:');
+  const pw=prompt('Zadaj admin heslo pre zmazanie CELÉHO zoznamu:');
   if(pw===null)return;
-  if(pw!==admPw){toast('❌ Nesprávne heslo',true);return;}
+  if(!checkPw(pw,admPw)){toast('❌ Nesprávne heslo',true);return;} // ✅ podpora hashovaného hesla
   LS.s('pb_cal_warnings',{});
-  if($('p-spravca')?.classList.contains('on'))rSpravca();
-  toast('Všetky varovania vymazané');
+  renderCustWarnings();
+  toast('Zoznam vymazaný');
+}
+
+// ══ PROBLÉMOVÍ ZÁKAZNÍCI — no-show / rušenie ══
+// Identita = email/telefón (spoľahlivý kľúč). Meno z kalendára je len doplnkové,
+// lebo sa parsuje z popisu eventu a môže to byť poznámka, nie skutočné meno.
+function renderCustWarnings(){
+  const el=$('cust-warnings');if(!el)return;
+  const warnings=LS.g('pb_cal_warnings',{});
+  // Zobraz aj klientov s 0 "chybami" (napr. len počasie) — je to história, nie obvinenie
+  const entries=Object.entries(warnings).map(([k,w])=>({key:k,...w}))
+    .filter(w=>(w.events||[]).length>0)
+    .sort((a,b)=>(b.count-a.count)||((b.events||[]).length-(a.events||[]).length));
+  if(!entries.length){
+    el.innerHTML='<div style="font-size:11px;color:var(--t3);padding:8px 2px;">Žiadne no-show záznamy. Spusti sken, alebo označ akciu ako <strong>No-show</strong> na úvodnej obrazovke.</div>';
+    return;
+  }
+  const RISK={risk:{lbl:'RIZIKO — žiadaj zálohu',col:'var(--red)',bg:'var(--rbg)'},
+              watch:{lbl:'Sledovať',col:'var(--amb)',bg:'var(--abg)'},
+              ok:{lbl:'Bez problémov',col:'var(--t2)',bg:'var(--bg3)'}};
+  const nRisk=entries.filter(w=>custRiskLevel(w)==='risk').length;
+  el.innerHTML=`<div style="font-size:11px;color:var(--t3);margin-bottom:6px;">${entries.length} zákazník${entries.length===1?'':'ov'} so záznamom${nRisk>0?` · <span style="color:var(--red);font-weight:700;">${nRisk} rizikových</span>`:''}</div>`+
+  entries.map(w=>{
+    const lvl=custRiskLevel(w);const R=RISK[lvl];
+    const ident=w.email||w.phone||w.key;
+    const cats=w.cats||{};
+    // Chipy podľa kategórií — chyba klienta červeno, ospravedlniteľné modro
+    const catChips=Object.entries(cats).map(([c,n])=>{
+      const M=PROBLEM_CATS[c]||PROBLEM_CATS.other;
+      return`<span style="font-size:9px;padding:1px 6px;border-radius:99px;background:${M.fault?'var(--rbg)':'var(--bbg)'};color:${M.col};white-space:nowrap;">${M.icon} ${M.lbl}${n>1?' ×'+n:''}</span>`;
+    }).join(' ');
+    const dates=(w.events||[]).slice(-6).map(e=>{
+      const M=PROBLEM_CATS[e.cat]||PROBLEM_CATS.other;
+      return`<span title="${escHtml(M.lbl)}">${e.date?fD(e.date):'—'} ${M.icon}</span>`;
+    }).join(' · ');
+    return`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:.5px solid var(--b1);">
+      <span style="background:${R.bg};color:${R.col};border:.5px solid ${R.col};border-radius:99px;padding:1px 7px;font-size:10px;font-weight:700;min-width:26px;text-align:center;flex-shrink:0;">${w.count}×</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;word-break:break-word;">${escHtml(ident)}
+          <span style="font-size:9px;color:${R.col};font-weight:700;margin-left:4px;">${R.lbl}</span>
+        </div>
+        ${w.email&&w.phone?`<div style="font-size:10px;color:var(--t3);">📞 ${escHtml(w.phone)}</div>`:''}
+        ${w.name&&w.name!==ident?`<div style="font-size:10px;color:var(--t3);">📝 ${escHtml(w.name)}</div>`:''}
+        ${catChips?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;">${catChips}</div>`:''}
+        ${dates?`<div style="font-size:9px;color:var(--t3);margin-top:3px;">${dates}</div>`:''}
+      </div>
+      <button class="btn xs R" onclick="clearCalWarning(${JSON.stringify(w.key).replace(/"/g,'&quot;')})" style="font-size:10px;flex-shrink:0;" title="Odstrániť zo zoznamu">✕</button>
+    </div>`;
+  }).join('');
+}
+
+// Prejde posledných N dní v kalendári a prepočíta zoznam od nuly.
+// Bez toho sa počty plnia len z dní, ktoré si náhodou otvoril → nespoľahlivé.
+async function scanCalWarnings(days){
+  const calId=LS.g('pb_cal_id','');
+  const token=await gCalSAGetToken();
+  if(!calId||!token){toast('Google Kalendár nie je nastavený');return;}
+  toast('🔍 Skenujem posledných '+days+' dní…');
+  const to=new Date();const from=new Date(Date.now()-days*86400000);
+  try{
+    const url=`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events?timeMin=${encodeURIComponent(from.toISOString())}&timeMax=${encodeURIComponent(to.toISOString())}&singleEvents=true&orderBy=startTime&maxResults=2500`;
+    const r=await fetch(url,{headers:{Authorization:'Bearer '+token}});
+    if(!r.ok){toast('Chyba pri čítaní kalendára');return;}
+    const data=await r.json();
+    const events=(data.items||[]).filter(ev=>ev.status!=='cancelled');
+    LS.s('pb_cal_warnings',{}); // prepočet od nuly
+    updateCalWarnings(events);
+    renderCustWarnings();
+    const n=Object.keys(LS.g('pb_cal_warnings',{})).length;
+    pushCustomerBehaviorToCloud(); // sprístupni botovi
+    toast(`✅ Sken hotový — ${n} zákazníkov so záznamom z ${events.length} akcií`);
+  }catch(e){console.error('[scanCalWarnings]',e);toast('Chyba pri skenovaní');}
+}
+
+// ══ SYNC SPRÁVANIA KLIENTOV DO SUPABASE ══
+// Sprístupní zoznam ProPaintballBot asistentovi, aby pri rezervácii vedel,
+// či od klienta žiadať zálohu vopred. Ukladá sa do pb_data, id='customer_behavior'.
+async function pushCustomerBehaviorToCloud(){
+  if(!sbUrl||!sbKey)return;
+  const warnings=LS.g('pb_cal_warnings',{});
+  const customers=Object.entries(warnings).map(([key,w])=>({
+    key,
+    email:w.email||'',
+    phone:w.phone||'',
+    name:w.name||'',
+    risk:custRiskLevel(w),        // 'ok' | 'watch' | 'risk'
+    faultCount:w.count||0,        // len chyby klienta (no-show, neskoré zrušenie)
+    categories:w.cats||{},        // {no_show:2, weather:1, cancel_48h:1, ...}
+    events:(w.events||[]).map(e=>({date:e.date,summary:e.summary,category:e.cat||'other'}))
+  }));
+  const payload={
+    updatedAt:new Date().toISOString(),
+    legend:{
+      no_show:'Klient neprišiel — chyba klienta',
+      cancelled:'Zrušené neskoro (menej ako 48h) — chyba klienta',
+      cancel_48h:'Zrušené 48h+ vopred, záloha vrátená — bez viny',
+      weather:'Zrušené/presunuté pre zlé počasie — bez viny',
+      moved:'Presunuté na iný termín — bez viny',
+      other:'Označené červenou bez uvedeného dôvodu'
+    },
+    riskRule:'risk = 2+ no-show alebo 3+ zavinených; watch = 1+ zavinený; ok = bez viny',
+    customers
+  };
+  try{
+    await fetch(`${sbUrl}/rest/v1/pb_data`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':sbKey,'Authorization':'Bearer '+sbKey,'Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify({id:'customer_behavior',payload,updated_at:new Date().toISOString(),backup_type:'customer_behavior'})
+    });
+  }catch(e){console.warn('[pushCustomerBehavior]',e);}
 }
 
 function updateGDriveStatus(){
