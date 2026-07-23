@@ -790,7 +790,8 @@ textarea{resize:none;line-height:1.5;}
         <div class="card" style="border-color:var(--rbd);">
           <div class="ch" style="color:var(--red);">🚫 Správanie zákazníkov — no-show / rušenie</div>
           <div style="font-size:10px;color:var(--t3);margin-bottom:8px;line-height:1.6;">
-            Plní sa z Google kalendára — akcie označené <strong style="color:var(--red);">červenou</strong> (aj sivou z tlačidla No-show).
+            Plní sa z Google kalendára — <strong>len</strong> akcie označené <strong style="color:var(--red);">červenou</strong>.
+            Zelené = bežné potvrdené akcie, tie sa sem <strong>nerátajú</strong>.
             Dôvod sa číta z popisu eventu:
             <span style="color:var(--red);">🚫 neprišli</span> a <span style="color:var(--red);">❌ zrušené neskoro</span> sa rátajú ako chyba klienta;
             <span style="color:var(--blu);">↩️ zrušené 48h+</span>, <span style="color:var(--blu);">🌧 počasie</span> a <span style="color:var(--blu);">📅 presunuté</span> sa <strong>nerátajú</strong>.
@@ -1041,7 +1042,12 @@ textarea{resize:none;line-height:1.5;}
   </div>
 </div></div>
 <!-- Voucher Modal -->
-<div class="mw" id="m-voucher"><div class="mb"><div class="mt" data-i18n="voucher-hdr">🎫 Poukaz</div><div class="fr"><label class="lb" data-i18n="voucher-amount">Suma poukazu (€)</label><input type="number" id="vc-amt" min="0" step="0.5" value="0" placeholder="Napr. 50"/></div><div class="fr"><label class="lb" data-i18n="voucher-num">Číslo poukazu</label><input type="text" id="vc-num" placeholder="Napr. VP-2026-001"/></div><div class="r2" style="margin-top:10px;"><button class="btn G" onclick="confirmVoucher()" data-i18n="voucher-add">Pridať na účet</button><button class="btn" onclick="cm('m-voucher')" data-i18n="cancel">Zrušiť</button></div></div></div>
+<div class="mw" id="m-voucher"><div class="mb"><div class="mt" data-i18n="voucher-hdr">🎫 Poukaz</div>
+  <div class="fr"><label class="lb" data-i18n="voucher-num">Číslo poukazu</label><input type="text" id="vc-num" placeholder="Napr. 2605238214" oninput="onVoucherNumInput()" autocomplete="off"/></div>
+  <div id="vc-status" style="margin:2px 0 8px;font-size:12px;line-height:1.5;"></div>
+  <div class="fr"><label class="lb" data-i18n="voucher-amount">Suma poukazu (€)</label><input type="number" id="vc-amt" min="0" step="0.5" value="0" placeholder="Napr. 50"/></div>
+  <div class="r2" style="margin-top:10px;"><button class="btn G" onclick="confirmVoucher()" data-i18n="voucher-add">Pridať na účet</button><button class="btn" onclick="cm('m-voucher')" data-i18n="cancel">Zrušiť</button></div>
+</div></div>
 <!-- Customer Edit Modal -->
 <div class="mw" id="m-cust-edit"><div class="mb"><div class="mt" data-i18n="cust-edit-hdr">✏️ Upraviť zákazníka</div><div class="fr"><label class="lb" data-i18n="cust-nick">Nick / Meno</label><input type="text" id="ce-name"/></div><div class="fr"><label class="lb">Email</label><input type="email" id="ce-email"/></div><div class="fr"><label class="lb">Telefón</label><input type="tel" id="ce-phone"/></div><div style="font-size:10px;color:var(--t3);margin-top:4px;" id="ce-info"></div><div style="display:flex;gap:7px;margin-top:10px;"><button class="btn R" onclick="deleteCust()" data-i18n="cust-delete">🗑 Zmazať</button><div style="flex:1;"></div><button class="btn" onclick="cm('m-cust-edit')" data-i18n="cancel">Zrušiť</button><button class="btn G" onclick="saveCustEdit()" data-i18n="save">Uložiť</button></div></div></div>
 <!-- Delete confirm -->
@@ -1126,7 +1132,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.22';
+const APP_VERSION='2026.07.23';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1803,6 +1809,8 @@ async function sbPull(){
       headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
     });
     if(sr.ok){const srows=await sr.json();if(srows.length)_applySettings(srows[0].payload);}
+    // 1b. Pull zoznam poukazov od ProPaintballBota (id='vouchers')
+    pullVouchers();
     // 2. Pull session rows + main legacy row SÚČASNE
     const [sessR, mainR] = await Promise.all([
       fetch(`${sbUrl}/rest/v1/pb_data?backup_type=eq.session&select=id,payload,updated_at&order=updated_at.desc`,{
@@ -3093,7 +3101,9 @@ function addP(pid){
   if(p.isVoucher){
     if(!selId){toast(t('toast-select-player'));return;}
     if(!canEditWb(selId)){toast(t('toast-no-permission'));return;}
-    $('vc-amt').value='';$('vc-num').value='';om('m-voucher');return;
+    $('vc-amt').value='';$('vc-num').value='';_voucherEval=null;
+    const vm=$('m-voucher');if(vm){const gb=vm.querySelector('.btn.G');if(gb)gb.onclick=function(){confirmVoucher();};}
+    onVoucherNumInput();om('m-voucher');return;
   }
   // ── ŠTANDARDNÝ PRODUKT ──
   if(!selId){toast(t('toast-select-player'));return;}
@@ -3488,7 +3498,71 @@ function saveItem(){
   w.items[editIdx].disc=Math.min(100,Math.max(0,parseFloat($('ed').value)||0));
   editIdx=null;cm('m-item');save();rBill();rWbs();
 }
-// ══ VOUCHER ══
+// ══ VOUCHER — overenie proti zoznamu z ProPaintballBota ══
+// Bot publikuje poukazy do Supabase pb_data id='vouchers' (schéma z vouchers_issued.json).
+// Pokladňa ich číta pri sync, overuje pri zadaní čísla a uplatnenie zapisuje späť.
+function lVouchers(){try{return JSON.parse(localStorage.getItem('pb_vouchers')||'[]');}catch(e){return[];}}
+function sVouchers(a){try{localStorage.setItem('pb_vouchers',JSON.stringify(a));}catch(e){}}
+// Stiahni zoznam poukazov z Supabase (bot publikuje do pb_data id='vouchers')
+async function pullVouchers(){
+  if(!sbUrl||!sbKey)return;
+  try{
+    const r=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.vouchers&select=payload,updated_at`,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
+    if(!r.ok)return;
+    const rows=await r.json();
+    const p=rows&&rows[0]&&rows[0].payload;
+    const list=Array.isArray(p)?p:(p&&Array.isArray(p.list)?p.list:null);
+    if(list){
+      // zachovaj lokálne 'used' označenia (optimistické), inak prevezmi z cloudu
+      const localUsed=new Set(lVouchers().filter(v=>(v.status||'').toLowerCase()==='used').map(v=>String(v.voucher_no)));
+      list.forEach(v=>{if(localUsed.has(String(v.voucher_no))&&(v.status||'').toLowerCase()==='issued')v._localUsedPending=true;});
+      sVouchers(list);
+      LS.s('pb_vouchers_synced',Date.now());
+    }
+  }catch(e){console.warn('[pullVouchers]',e);}
+}
+// Nájdi poukaz podľa čísla (ignoruje medzery/prefix "#")
+function findVoucher(num){
+  const n=String(num||'').replace(/[#\s]/g,'').toLowerCase();
+  if(!n)return null;
+  return lVouchers().find(v=>String(v.voucher_no||'').replace(/\s/g,'').toLowerCase()===n)||null;
+}
+// Vyhodnoť platnosť poukazu → {state, label, color, amount, voucher}
+// state: valid | used | cancelled | expired | pending | notfound | novalid
+function evalVoucher(num){
+  const v=findVoucher(num);
+  if(!num||!num.trim())return{state:'empty'};
+  if(!v)return{state:'notfound',label:'❌ Poukaz sa nenašiel v zozname',color:'var(--red)'};
+  const amount=parseFloat(v.price_eur)||0;
+  const exp=v.valid_until?new Date(v.valid_until+'T23:59:59'):null;
+  const expired=exp&&exp<new Date();
+  const st=(v.status||'').toLowerCase();
+  if(st==='used')return{state:'used',label:'🚫 Poukaz už bol POUŽITÝ'+(v.used_at?' ('+fD(v.used_at)+')':''),color:'var(--red)',amount,voucher:v};
+  if(st==='cancelled')return{state:'cancelled',label:'🚫 Poukaz je ZRUŠENÝ'+(v.notes?' — '+v.notes:''),color:'var(--red)',amount,voucher:v};
+  if(st==='pending_payment')return{state:'pending',label:'⚠️ Poukaz NIE JE zaplatený (pending)',color:'var(--amb)',amount,voucher:v};
+  if(st==='expired'||expired)return{state:'expired',label:'⏰ Poukaz EXPIROVAL'+(v.valid_until?' ('+v.valid_until+')':''),color:'var(--amb)',amount,voucher:v};
+  if(st==='issued')return{state:'valid',label:'✅ Platný poukaz'+(v.customer_name?' · '+v.customer_name:'')+(v.valid_until?' · platí do '+v.valid_until:''),color:'var(--grn)',amount,voucher:v};
+  return{state:'novalid',label:'⚠️ Neznámy stav: '+st,color:'var(--amb)',amount,voucher:v};
+}
+let _voucherEval=null;
+function onVoucherNumInput(){
+  const num=$('vc-num').value.trim();
+  const ev=evalVoucher(num);_voucherEval=ev;
+  const el=$('vc-status');const amtEl=$('vc-amt');
+  if(!el)return;
+  if(ev.state==='empty'){el.innerHTML='<span style="color:var(--t3);">Zadaj číslo poukazu — automaticky sa overí a doplní suma.</span>';return;}
+  const box=(bg,bd,txt)=>`<div style="background:${bg};border:1px solid ${bd};border-radius:var(--rs);padding:7px 10px;font-weight:600;color:${ev.color};">${txt}${ev.amount?` · <strong>${fp(ev.amount)}</strong>`:''}</div>`;
+  if(ev.state==='valid'){
+    el.innerHTML=box('var(--gbg)','var(--gbd)',ev.label);
+    if(amtEl&&ev.amount)amtEl.value=ev.amount; // auto-doplň sumu
+  }else if(ev.state==='pending'||ev.state==='expired'||ev.state==='novalid'){
+    el.innerHTML=box('var(--abg)','var(--abd)',ev.label)+`<div style="font-size:10px;color:var(--t3);margin-top:3px;">Uplatniť môžeš aj tak — uloží sa s upozornením do reportu.</div>`;
+    if(amtEl&&ev.amount&&!parseFloat(amtEl.value))amtEl.value=ev.amount;
+  }else{ // used / cancelled / notfound
+    el.innerHTML=`<div style="background:var(--rbg);border:2px solid var(--red);border-radius:var(--rs);padding:9px 11px;font-weight:700;color:var(--red);">${ev.label}</div><div style="font-size:10px;color:var(--t3);margin-top:3px;">Ak si istý, môžeš uplatniť aj tak — uloží sa VÝRAZNE do reportu na overenie.</div>`;
+    if(amtEl&&ev.amount&&!parseFloat(amtEl.value))amtEl.value=ev.amount;
+  }
+}
 function confirmVoucher(){
   const amt=parseFloat($('vc-amt').value)||0;
   const num=$('vc-num').value.trim();
@@ -3497,18 +3571,47 @@ function confirmVoucher(){
   // ✅ Strop: poukaz max. do výšky účtu — účet nesmie ísť do mínusu
   const cur=billAmt(w);
   if(cur<=0){toast('Účet je nulový — poukaz nie je možné uplatniť');return;}
+  const ev=_voucherEval&&_voucherEval.state!=='empty'?_voucherEval:evalVoucher(num);
+  // ⚠️ Neplatný poukaz → výrazné potvrdenie (ale povolené — zaráta sa a označí v reporte)
+  if(['used','cancelled','notfound'].includes(ev.state)){
+    if(!confirm(`⚠️ POZOR — ${ev.label}\n\nČíslo: ${num||'—'}\n\nNaozaj chceš tento poukaz uplatniť?\nUloží sa VÝRAZNE do reportu na dodatočné overenie.`))return;
+  }
   let useAmt=amt;
   if(useAmt>cur){useAmt=cur;toast('⚠️ Poukaz skrátený na výšku účtu: '+fp(cur));}
-  const vName='Poukaz'+(num?' #'+num:'');
-  w.items.push({id:36,name:vName,price:-useAmt,qty:1,disc:0,voucherNum:num,isVoucher:true});
-  cm('m-voucher');save();rBill();rWbs();toast(t('toast-voucher-added')+' '+fp(useAmt));
+  // Stav overenia uložený na položke → report + Supabase
+  const vStatus=ev.state; // valid | used | cancelled | expired | pending | notfound | novalid
+  const vName='Poukaz'+(num?' #'+num:'')+(vStatus!=='valid'?' ⚠️':'');
+  w.items.push({id:36,name:vName,price:-useAmt,qty:1,disc:0,voucherNum:num,isVoucher:true,vStatus,vCheckedAt:new Date().toISOString()});
+  // Zapíš uplatnenie do Supabase + optimisticky označ lokálne ako použitý
+  if(num)redeemVoucherCloud(num,useAmt,w,vStatus);
+  cm('m-voucher');save();rBill();rWbs();
+  toast((vStatus==='valid'?'✅':'⚠️')+' '+t('toast-voucher-added')+' '+fp(useAmt));
+}
+// Zapíš uplatnenie do Supabase (append) + lokálne prepni na 'used'
+function redeemVoucherCloud(num,amount,w,vStatus){
+  // lokálny optimistický update
+  const arr=lVouchers();const v=arr.find(x=>String(x.voucher_no||'').replace(/\s/g,'').toLowerCase()===String(num).replace(/[#\s]/g,'').toLowerCase());
+  if(v){v.status='used';v.used_at=new Date().toISOString();v.used_by=currentUser?.name||'';sVouchers(arr);}
+  if(!sbUrl||!sbKey)return;
+  const rec={voucher_no:String(num).replace(/[#\s]/g,''),amount,redeemed_at:new Date().toISOString(),
+    by:currentUser?.name||'',arena:w?.sArena||getSess()?.arena||'',activity:w?.sAct||getSess()?.activity||'',
+    player:w?.name||'',check_status:vStatus,device:LS.g('pb_device_id','')||'—'};
+  // Načítaj existujúci list redemptions, pridaj, ulož
+  fetch(`${sbUrl}/rest/v1/pb_data?id=eq.voucher_redemptions&select=payload`,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}})
+    .then(r=>r.ok?r.json():[]).then(rows=>{
+      const cur=(rows&&rows[0]&&rows[0].payload&&Array.isArray(rows[0].payload.list))?rows[0].payload.list:[];
+      cur.push(rec);
+      return fetch(`${sbUrl}/rest/v1/pb_data`,{method:'POST',
+        headers:{'Content-Type':'application/json','apikey':sbKey,'Authorization':'Bearer '+sbKey,'Prefer':'resolution=merge-duplicates'},
+        body:JSON.stringify({id:'voucher_redemptions',payload:{list:cur,updatedAt:new Date().toISOString()},updated_at:new Date().toISOString(),backup_type:'voucher_redemptions'})});
+    }).catch(e=>console.warn('[redeemVoucher]',e));
 }
 function openEVoucher(idx){
   const wbs=getWbs();const w=wbs.find(w=>w.id===selId);if(!w)return;
   const it=w.items[idx];
   $('vc-amt').value=Math.abs(it.price);
   $('vc-num').value=it.voucherNum||'';
-  _voucherEditIdx=idx;
+  _voucherEditIdx=idx;_voucherEval=null;onVoucherNumInput();
   // Repurpose confirm button
   $('m-voucher').querySelector('.btn.G').onclick=function(){saveVoucherEdit();};
   om('m-voucher');
@@ -4481,6 +4584,23 @@ function openReport(key){
       ${inv>0?`<div class="rep-row" style="color:${sessInvPaid?'var(--pur)':'var(--amb)'};"><span>🧾 Faktúra${sessInvPaid?' ✅':' ⏳'}</span><span>${fp(inv)}</span></div>`:''}
       <div class="rep-row"><span>Počet zákazníkov</span><span>${grp.length}</span></div>
     </div>
+    ${(()=>{
+      // 🎫 Poukazy — zvýrazni neplatné/neoverené pre dodatočnú kontrolu
+      const vItems=[];grp.forEach(w=>(w.items||[]).forEach(i=>{if(i.isVoucher||i.id===36)vItems.push({...i,player:w.name});}));
+      if(!vItems.length)return'';
+      const bad=vItems.filter(i=>i.vStatus&&i.vStatus!=='valid');
+      const rows=vItems.map(i=>{
+        const st=i.vStatus||'unchecked';
+        const M={valid:['✅ Overený','var(--grn)'],used:['🚫 UŽ POUŽITÝ','var(--red)'],cancelled:['🚫 ZRUŠENÝ','var(--red)'],notfound:['❌ NENÁJDENÝ','var(--red)'],expired:['⏰ EXPIROVANÝ','var(--amb)'],pending:['⚠️ NEZAPLATENÝ','var(--amb)'],novalid:['⚠️ Neznámy stav','var(--amb)'],unchecked:['— neoverený (ručne)','var(--t3)']}[st]||['—','var(--t3)'];
+        return`<div class="rep-row" style="color:${M[1]};"><span>🎫 ${escHtml(i.voucherNum||'bez čísla')} · ${escHtml(i.player)}</span><span>${fp(Math.abs(i.price)*i.qty)} · ${M[0]}</span></div>`;
+      }).join('');
+      const border=bad.length?'var(--red)':'var(--gbd)';
+      return`<div class="rep-section" style="border:2px solid ${border};border-radius:var(--rs);padding:10px 14px;margin-bottom:8px;${bad.length?'background:var(--rbg);':''}">
+        <div class="rep-title" style="color:${bad.length?'var(--red)':'var(--grn)'};">🎫 Uplatnené poukazy${bad.length?` — ⚠️ ${bad.length} NA OVERENIE`:''}</div>
+        ${rows}
+        ${bad.length?`<div style="font-size:11px;color:var(--red);margin-top:6px;font-weight:600;">⚠️ Označené poukazy boli uplatnené aj napriek tomu, že neboli platné — over ich v evidencii.</div>`:''}
+      </div>`;
+    })()}
     ${inv>0&&admUnlocked?`<div class="rep-section" style="background:var(--bg2);border:.5px solid ${sessInvPaid?'var(--pbd)':'var(--abd)'};border-radius:var(--rs);padding:10px 14px;margin-bottom:8px;">
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
@@ -6651,12 +6771,15 @@ function parseCalEvent(ev){
   const start=ev.start?.dateTime||ev.start?.date||'';
   const end=ev.end?.dateTime||ev.end?.date||'';
   const eventId=ev.id||'';
-  // Status from colorId: 2=sage/green, 9=basil/dark-green=confirmed, 10=tomato/red=cancelled, 11=graphite
+  // ✅ OFICIÁLNE mapovanie Google Calendar API colorId (predtým tu bolo zle):
+  //  1 Lavender · 2 Sage (sv. zelená) · 3 Grape · 4 Flamingo · 5 Banana · 6 Tangerine
+  //  7 Peacock · 8 Graphite (SIVÁ) · 9 Blueberry (modrá) · 10 Basil (tm. ZELENÁ) · 11 Tomato (ČERVENÁ)
+  const GC_RED='11'; // Tomato — jediná farba, ktorou sa značí zrušené / no-show
   let status='pending';
-  if(colorId==='9'||colorId==='2')status='confirmed';
-  else if(colorId==='10')status='cancelled';
+  if(colorId==='9'||colorId==='2'||colorId==='10')status='confirmed';
+  else if(colorId===GC_RED)status='cancelled';
   // ── Záloha zaplatená: zelená farba ALEBO kľúčové slovo v popise/názve ──
-  const isGreen=(colorId==='2'||colorId==='9');
+  const isGreen=(colorId==='2'||colorId==='9'||colorId==='10');
   const fullText=(summary+' '+description).toLowerCase();
   const depositKeywords=/záloha\s*(zaplatená|uhradená|zapl\.?)|zaplatená\s*záloha|deposit\s*paid|zapl\.\s*záloha|\d+[€e]\s*záloha/i;
   const depositPaid=isGreen||depositKeywords.test(fullText);
@@ -6681,20 +6804,21 @@ function parseCalEvent(ev){
   }
 
   // ── SPRÁVANIE KLIENTA — dôvod zrušenia / neúčasti ──
-  // Tím značí problémový event v GCal ČERVENOU (colorId 10) a dôvod píše do popisu.
+  // Tím značí problémový event v GCal ČERVENOU (Tomato = colorId 11), dôvod píše do popisu.
+  // Rovnakú farbu nastavuje aj tlačidlo "No-show" v pokladni → jeden zdroj pravdy.
   // Rozlišujeme, či je to chyba klienta (no-show, neskoré zrušenie) alebo nie (počasie, 48h+).
   const _dia=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
   const ftN=_dia(summary+' '+description);
-  const isRed=(colorId==='10');
+  const isRed=(colorId===GC_RED);
   let problemCat='',problemFault=false;
   if(/pocasi|dazd|dazdi|prsi|prsa|vietor|blato|zima|snah|snez|weather|rain/.test(ftN)){problemCat='weather';}
   else if(/48\s*h|viac ako 48|vratena zaloha|vratili zalohu|vratena\s*zal|vyrefundov|refundov|refund/.test(ftN)){problemCat='cancel_48h';}
   else if(/neprisl|neprisi|nedostavil|nepristup|no\s*-?\s*show|nedorazil/.test(ftN)){problemCat='no_show';problemFault=true;}
   else if(/presunut|prelozen|posunut/.test(ftN)){problemCat='moved';}
   else if(/zrusen|storno|cancel/.test(ftN)){problemCat='cancelled';problemFault=true;}
-  else if(isRed||colorId==='11'){problemCat='other';problemFault=true;}
-  // Problémový = červený/sivý event ALEBO jednoznačný textový dôvod
-  const isProblem=!!problemCat&&(isRed||colorId==='11'||problemCat==='no_show');
+  else if(isRed){problemCat='other';problemFault=true;}
+  // Problémový = červený/sivý event ALEBO jednoznačný textový dôvod "neprišli"
+  const isProblem=!!problemCat&&(isRed||problemCat==='no_show');
 
   // Arena: first word — map shortcodes to exact arena names from settings
   const parts=summary.trim().split(/\s+/);
@@ -6823,9 +6947,8 @@ const PROBLEM_CATS={
 };
 function updateCalWarnings(events){
   const warnings=LS.g('pb_cal_warnings',{});
-  // ✅ FIX: tím značí problémové akcie ČERVENOU (colorId 10) — predtým sa hľadala
-  //    len sivá (11), takže ručné označenia boli pre systém neviditeľné.
-  //    Zbierame červené aj sivé, plus eventy s jednoznačným textovým dôvodom.
+  // Zbierame len ČERVENÉ eventy (Tomato = 11). Pozor: Basil (10) je tmavo ZELENÁ,
+  // teda bežná potvrdená akcia — tá sem nepatrí.
   events.forEach(ev=>{
     const parsed=parseCalEvent(ev);
     if(!parsed.isProblem)return;
@@ -7212,6 +7335,7 @@ function clearAllCalWarnings(){
 // ══ PROBLÉMOVÍ ZÁKAZNÍCI — no-show / rušenie ══
 // Identita = email/telefón (spoľahlivý kľúč). Meno z kalendára je len doplnkové,
 // lebo sa parsuje z popisu eventu a môže to byť poznámka, nie skutočné meno.
+let _custWarnShowAll=false;
 function renderCustWarnings(){
   const el=$('cust-warnings');if(!el)return;
   const warnings=LS.g('pb_cal_warnings',{});
@@ -7223,38 +7347,44 @@ function renderCustWarnings(){
     el.innerHTML='<div style="font-size:11px;color:var(--t3);padding:8px 2px;">Žiadne no-show záznamy. Spusti sken, alebo označ akciu ako <strong>No-show</strong> na úvodnej obrazovke.</div>';
     return;
   }
-  const RISK={risk:{lbl:'RIZIKO — žiadaj zálohu',col:'var(--red)',bg:'var(--rbg)'},
+  const RISK={risk:{lbl:'RIZIKO',col:'var(--red)',bg:'var(--rbg)'},
               watch:{lbl:'Sledovať',col:'var(--amb)',bg:'var(--abg)'},
-              ok:{lbl:'Bez problémov',col:'var(--t2)',bg:'var(--bg3)'}};
+              ok:{lbl:'OK',col:'var(--t3)',bg:'var(--bg3)'}};
   const nRisk=entries.filter(w=>custRiskLevel(w)==='risk').length;
-  el.innerHTML=`<div style="font-size:11px;color:var(--t3);margin-bottom:6px;">${entries.length} zákazník${entries.length===1?'':'ov'} so záznamom${nRisk>0?` · <span style="color:var(--red);font-weight:700;">${nRisk} rizikových</span>`:''}</div>`+
-  entries.map(w=>{
+  const nWatch=entries.filter(w=>custRiskLevel(w)==='watch').length;
+  const nOk=entries.length-nRisk-nWatch;
+  // Filter: predvolene len tí, čo majú aspoň jednu zavinenú udalosť
+  const showAll=!!_custWarnShowAll;
+  const shown=showAll?entries:entries.filter(w=>(w.count||0)>0);
+
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px;font-size:11px;">
+      ${nRisk>0?`<span style="color:var(--red);font-weight:700;">🔴 ${nRisk} riziko</span>`:''}
+      ${nWatch>0?`<span style="color:var(--amb);font-weight:600;">🟡 ${nWatch} sledovať</span>`:''}
+      ${nOk>0?`<span style="color:var(--t3);">⚪ ${nOk} bez viny</span>`:''}
+      <button class="btn xs" onclick="_custWarnShowAll=!_custWarnShowAll;renderCustWarnings();" style="font-size:10px;margin-left:auto;">${showAll?'Skryť „bez viny"':'Zobraziť všetkých ('+entries.length+')'}</button>
+    </div>
+    <div style="max-height:340px;overflow-y:auto;border:.5px solid var(--b1);border-radius:var(--rs);">`+
+  (shown.length?shown.map(w=>{
     const lvl=custRiskLevel(w);const R=RISK[lvl];
     const ident=w.email||w.phone||w.key;
     const cats=w.cats||{};
-    // Chipy podľa kategórií — chyba klienta červeno, ospravedlniteľné modro
+    // Kompaktné chipy — len ikona + počet, plný názov v tooltipe
     const catChips=Object.entries(cats).map(([c,n])=>{
       const M=PROBLEM_CATS[c]||PROBLEM_CATS.other;
-      return`<span style="font-size:9px;padding:1px 6px;border-radius:99px;background:${M.fault?'var(--rbg)':'var(--bbg)'};color:${M.col};white-space:nowrap;">${M.icon} ${M.lbl}${n>1?' ×'+n:''}</span>`;
-    }).join(' ');
-    const dates=(w.events||[]).slice(-6).map(e=>{
-      const M=PROBLEM_CATS[e.cat]||PROBLEM_CATS.other;
-      return`<span title="${escHtml(M.lbl)}">${e.date?fD(e.date):'—'} ${M.icon}</span>`;
-    }).join(' · ');
-    return`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:.5px solid var(--b1);">
-      <span style="background:${R.bg};color:${R.col};border:.5px solid ${R.col};border-radius:99px;padding:1px 7px;font-size:10px;font-weight:700;min-width:26px;text-align:center;flex-shrink:0;">${w.count}×</span>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:12px;font-weight:600;word-break:break-word;">${escHtml(ident)}
-          <span style="font-size:9px;color:${R.col};font-weight:700;margin-left:4px;">${R.lbl}</span>
-        </div>
-        ${w.email&&w.phone?`<div style="font-size:10px;color:var(--t3);">📞 ${escHtml(w.phone)}</div>`:''}
-        ${w.name&&w.name!==ident?`<div style="font-size:10px;color:var(--t3);">📝 ${escHtml(w.name)}</div>`:''}
-        ${catChips?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;">${catChips}</div>`:''}
-        ${dates?`<div style="font-size:9px;color:var(--t3);margin-top:3px;">${dates}</div>`:''}
-      </div>
-      <button class="btn xs R" onclick="clearCalWarning(${JSON.stringify(w.key).replace(/"/g,'&quot;')})" style="font-size:10px;flex-shrink:0;" title="Odstrániť zo zoznamu">✕</button>
+      return`<span title="${escHtml(M.lbl)}" style="font-size:10px;color:${M.col};white-space:nowrap;">${M.icon}${n>1?n:''}</span>`;
+    }).join('');
+    const last=(w.events||[]).slice(-1)[0];
+    const lastStr=last&&last.date?fD(last.date):'';
+    const tip=(w.events||[]).map(e=>`${e.date?fD(e.date):'—'} ${(PROBLEM_CATS[e.cat]||PROBLEM_CATS.other).lbl}`).join('\n');
+    return`<div title="${escHtml(tip)}" style="display:flex;align-items:center;gap:7px;padding:5px 8px;border-bottom:.5px solid var(--b1);">
+      <span style="background:${R.bg};color:${R.col};border:.5px solid ${R.col};border-radius:99px;padding:0 6px;font-size:10px;font-weight:700;min-width:24px;text-align:center;flex-shrink:0;">${w.count}×</span>
+      <span style="flex:1;min-width:0;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(ident)}</span>
+      <span style="display:flex;gap:3px;flex-shrink:0;">${catChips}</span>
+      <span style="font-size:9px;color:var(--t3);flex-shrink:0;min-width:62px;text-align:right;">${lastStr}</span>
+      <button class="btn xs R" onclick="clearCalWarning(${JSON.stringify(w.key).replace(/"/g,'&quot;')})" style="font-size:9px;padding:1px 5px;flex-shrink:0;" title="Odstrániť zo zoznamu">✕</button>
     </div>`;
-  }).join('');
+  }).join(''):'<div style="font-size:11px;color:var(--t3);padding:10px;text-align:center;">Žiadny zavinený záznam 👍</div>')
+  +`</div>`;
 }
 
 // Prejde posledných N dní v kalendári a prepočíta zoznam od nuly.
