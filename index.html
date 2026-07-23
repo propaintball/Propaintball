@@ -793,8 +793,9 @@ textarea{resize:none;line-height:1.5;}
             Plní sa z Google kalendára — <strong>len</strong> akcie označené <strong style="color:var(--red);">červenou</strong>.
             Zelené = bežné potvrdené akcie, tie sa sem <strong>nerátajú</strong>.
             Dôvod sa číta z popisu eventu:
-            <span style="color:var(--red);">🚫 neprišli</span> a <span style="color:var(--red);">❌ zrušené neskoro</span> sa rátajú ako chyba klienta;
+            <span style="color:var(--red);">🚫 neprišli</span>, <span style="color:var(--red);">❌ zrušené neskoro</span> a <span style="color:var(--amb);">⚠️ červené bez uvedeného dôvodu</span> sa rátajú ako chyba klienta;
             <span style="color:var(--blu);">↩️ zrušené 48h+</span>, <span style="color:var(--blu);">🌧 počasie</span> a <span style="color:var(--blu);">📅 presunuté</span> sa <strong>nerátajú</strong>.
+            <span style="color:var(--t3);">Tip: ku každému ⚠️ dopíš do popisu eventu dôvod (napr. „neprišli" / „počasie"), aby sa správne zaradil.</span>
             Podklad pri rezervácii — či žiadať zálohu vopred. Po skene sa zoznam odošle aj ProPaintballBotovi.
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
@@ -7376,8 +7377,18 @@ function renderCustWarnings(){
     const last=(w.events||[]).slice(-1)[0];
     const lastStr=last&&last.date?fD(last.date):'';
     const tip=(w.events||[]).map(e=>`${e.date?fD(e.date):'—'} ${(PROBLEM_CATS[e.cat]||PROBLEM_CATS.other).lbl}`).join('\n');
+    // Popisok odznaku — vysvetlí, čo číslo znamená (zavinené vs. celkovo)
+    const totalEv=(w.events||[]).length;
+    const nFault=w.count||0;
+    const _sk=(n,a,b,c)=>n===1?a:(n>=2&&n<=4?b:c); // 1 prípad / 2-4 prípady / 5+ prípadov
+    const badgeTip=nFault===0
+      ? `0 zavinených prípadov z ${totalEv} ${_sk(totalEv,'záznamu','záznamov','záznamov')}\n`+
+        `Klient nič nezavinil — zrušil 48h+ vopred alebo bolo zlé počasie.\nZáznam je tu len ako história.`
+      : `${nFault} ${_sk(nFault,'zavinený prípad','zavinené prípady','zavinených prípadov')} z ${totalEv} ${_sk(totalEv,'záznamu','záznamov','záznamov')}\n`+
+        `Ráta sa: neprišli, zrušené neskoro, červené bez dôvodu.\nNeráta sa: zrušené 48h+, počasie, presunuté.\n`+
+        `Hodnotenie: ${R.lbl}`;
     return`<div title="${escHtml(tip)}" style="display:flex;align-items:center;gap:7px;padding:5px 8px;border-bottom:.5px solid var(--b1);">
-      <span style="background:${R.bg};color:${R.col};border:.5px solid ${R.col};border-radius:99px;padding:0 6px;font-size:10px;font-weight:700;min-width:24px;text-align:center;flex-shrink:0;">${w.count}×</span>
+      <span title="${escHtml(badgeTip)}" style="background:${R.bg};color:${R.col};border:.5px solid ${R.col};border-radius:99px;padding:0 6px;font-size:10px;font-weight:700;min-width:24px;text-align:center;flex-shrink:0;cursor:help;">${w.count}×</span>
       <span style="flex:1;min-width:0;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(ident)}</span>
       <span style="display:flex;gap:3px;flex-shrink:0;">${catChips}</span>
       <span style="font-size:9px;color:var(--t3);flex-shrink:0;min-width:62px;text-align:right;">${lastStr}</span>
