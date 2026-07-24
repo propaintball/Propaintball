@@ -1133,7 +1133,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.24';
+const APP_VERSION='2026.07.24b';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1229,6 +1229,35 @@ function setWbs(a){if(curSid)wbMap[curSid]=a;}
 let _wbSeq=0;
 function _deviceTag(){let d=LS.g('pb_device_id','');if(!d){d=Math.random().toString(36).slice(2,7);LS.s('pb_device_id',d);}return d;}
 function newWbId(){return 'H-'+Date.now().toString(36)+'-'+_deviceTag()+'-'+(_wbSeq++).toString(36);}
+// ✅ Odstráň duplicitné uzavreté účty s rovnakým ID (ponechá bohatší) — čistí starý bug
+function dedupeClosed(){
+  const seen=new Map();let removed=0;
+  closed.forEach(w=>{
+    const ex=seen.get(w.id);
+    if(!ex){seen.set(w.id,w);return;}
+    const score=x=>((x.items||[]).length*100)+(x.bUsed||0);
+    if(score(w)>score(ex))seen.set(w.id,w);
+    removed++;
+  });
+  if(removed){closed=[...seen.values()];}
+  return removed;
+}
+// ✅ Admin: natrvalo zmazať uzavretý účet (napr. duplikát z chyby) — s heslom a auditom
+function adminDeleteBill(id){
+  if(!isAdmin()){toast('Len admin môže mazať účty');return;}
+  const w=closed.find(c=>c.id===id);if(!w){toast('Účet nenájdený');return;}
+  const pw=prompt('🗑 ZMAZAŤ ÚČET\n\nHráč: '+w.name+'\nSuma: '+fp(totalAmt(w))+'\nPlatba: '+wPayLabel(w)+'\n\nToto natrvalo odstráni účet z tržieb a štatistík.\nPouži len pri duplicite / chybe.\n\nZadaj admin heslo:');
+  if(pw===null)return;
+  if(!checkPw(pw,admPw)){toast('❌ Nesprávne heslo');return;}
+  auditLog('admin-delete-bill',w.name+' | '+id+' | '+fp(totalAmt(w))+' | '+(w.payM||''));
+  closed=closed.filter(c=>c.id!==id);
+  // Ak bola k tomuto hráčovi priradená popup-záloha, upozorni (netreba mazať automaticky)
+  save();
+  if($('p-spravca')?.classList.contains('on'))rSpravca();
+  if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
+  updInvBadge();
+  toast('🗑 Účet '+w.name+' zmazaný');
+}
 // ✅ Odstráň duplikáty s rovnakým ID zo session (ponechá bohatší záznam — viac položiek/gul.)
 function dedupeWbs(key){
   const arr=wbMap[key];if(!Array.isArray(arr))return 0;
@@ -4131,7 +4160,34 @@ function confirmEPay(){if(!confirm('Naozaj zmeniť spôsob platby?'))return;cons
 function openEPayM(id){ePayId=id;const w=closed.find(c=>c.id===id);ePayM=w?w.payM:'cash';$('epo-c').className='po'+(ePayM==='cash'?' cash':'');$('epo-k').className='po'+(ePayM==='card'?' card':'');$('epo-f').className='po'+(ePayM==='invoice'?' invoice':'');om('m-epay');}
 // ══ REOPEN ══
 function openReopen(id){reopW=closed.find(c=>c.id===id);if(!reopW)return;$('m-reopen-b').innerHTML=`<p style="font-size:13px;color:var(--t2);margin-bottom:9px;">Znovu otvoriť <strong style="color:var(--t1);">${reopW.name}</strong>?</p><p style="font-size:11px;color:var(--t3);">Uzavreté: ${fDT(reopW.closedAt)}</p>`;om('m-reopen');}
-function confirmReopen(){if(!reopW)return;const wbs=getWbs();if(wbs.find(x=>x.id===reopW.id)){toast('Hráč s týmto ID už existuje');return;}const w={...reopW};delete w.closedAt;delete w.payM;wbs.push(w);setWbs(wbs);closed=closed.filter(c=>c.id!==reopW.id);selId=w.id;cm('m-reopen');save();gT('reg');rWbs();rBill();rPbt();rDrk();toast('Účet '+w.name+' znovu otvorený');reopW=null;}
+function confirmReopen(){
+  if(!reopW)return;
+  const w={...reopW};
+  // ✅ Otvor účet späť do JEHO vlastnej akcie (nie do náhodnej aktuálnej / žiadnej).
+  //    Predtým sa pushoval do getWbs() = wbMap[curSid]; keď curSid nebol jeho session
+  //    (napr. "Bez session"), setWbs sa preskočilo a hráč sa STRATIL.
+  const tgtKey=w.sKey||curSid;
+  if(!tgtKey){toast('Účet nemá priradenú akciu — nedá sa otvoriť');return;}
+  let sess=sessArr.find(s=>s.key===tgtKey);
+  if(!sess){
+    // Akcia už bola uzavretá → reaktivuj ju z metadát účtu
+    sess={key:tgtKey,arena:w.sArena||'',activity:w.sAct||'',instructor:w.sInstr||'',
+          instructors:w.sInstr?[w.sInstr]:[],date:w.sDate||'',time:w.sTime||'',
+          startedAt:new Date().toISOString(),calRunNumber:w.sCalRunNumber||null};
+    sessArr.push(sess);
+    // odmena sa musí prepočítať po opätovnom uzavretí — zmaž starú
+    const pouts=lPouts();if(pouts[tgtKey]){delete pouts[tgtKey];sPouts(pouts);}
+  }
+  if(!wbMap[tgtKey])wbMap[tgtKey]=[];
+  if(wbMap[tgtKey].find(x=>x.id===w.id)){toast('Hráč s týmto ID už je otvorený');cm('m-reopen');reopW=null;return;}
+  delete w.closedAt;delete w.payM;delete w.justClosed;
+  wbMap[tgtKey].push(w);
+  closed=closed.filter(c=>c.id!==reopW.id);
+  curSid=tgtKey;selId=w.id;
+  cm('m-reopen');save();showApp();gT('reg');rWbs();rBill();rPbt();rDrk();
+  toast('✅ Účet '+w.name+' znovu otvorený — môžeš ho upraviť a znova uzavrieť');
+  reopW=null;
+}
 // ══ EDIT AMOUNT (Správca) ══
 let _editAmtId=null;
 function openEditAmt(id){
@@ -4528,7 +4584,7 @@ function rClosed(){
       ${grp.map(w=>`<div class="card" style="margin-bottom:6px;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;">
           <div><span style="font-size:13px;font-weight:600;">${w.name}</span><span class="bdg ${(w.paidExtras&&w.paidExtras.length)?'bi':w.payM==='card'?'bk':w.payM==='invoice'?'bi':'bc'}">${(w.paidExtras&&w.paidExtras.length)?'🧾+'+(w.paidExtras.some(e=>e.payM==='card')?'💳':'💵')+(w.paidExtras.some(e=>e.payM==='cash')&&w.paidExtras.some(e=>e.payM==='card')?'+💵':''):(w.payM==='card'?'💳 Karta':w.payM==='invoice'?'🧾 Faktúra':'💵 Hotovosť')}</span></div>
-          <div style="text-align:right;flex-shrink:0;margin-left:8px;"><div style="font-size:10px;color:var(--t3);">${fT(w.closedAt)}</div><div style="display:flex;gap:4px;margin-top:3px;justify-content:flex-end;"><button class="btn xs B" onclick="openEPayM('${w.id}')">✎</button><button class="btn xs A" onclick="openReopen('${w.id}')">↩</button></div></div>
+          <div style="text-align:right;flex-shrink:0;margin-left:8px;"><div style="font-size:10px;color:var(--t3);">${fT(w.closedAt)}</div><div style="display:flex;gap:4px;margin-top:3px;justify-content:flex-end;"><button class="btn xs B" onclick="openEPayM('${w.id}')">✎</button><button class="btn xs A" onclick="openReopen('${w.id}')">↩</button>${admUnlocked?`<button class="btn xs R" onclick="adminDeleteBill('${w.id}')" title="Zmazať účet">🗑</button>`:''}</div></div>
         </div>
         ${(()=>{const pkg=getPkg(w);if(!pkg)return'';const payIcon=w.payM==='card'?'💳 Karta':w.payM==='invoice'?'🧾 Faktúra':'💵 Hotovosť';const showBalls=pkg.isPB||pkg.isAS||pkg.isGB;const ballStr=showBalls?`🔴 ${w.bUsed||0}/${totBalls(w)} guličiek`:'';const drinkStr=(w.dG&&w.dG.length)?`🥤 ${w.dG.join(', ')}`:'' ;return showBalls||drinkStr?`<div style="font-size:10px;color:var(--t2);margin:2px 0;">${[ballStr,drinkStr].filter(Boolean).join(' · ')}</div>`:''})()}
         ${w.items.map(i=>{const d=i.disc||0;return`<div class="rr"><span>${i.name} ×${i.qty}${d>0?' (-'+d+'%)':''}</span><span>${fp(i.price*i.qty*(1-d/100))}</span></div>`;}).join('')}
@@ -5059,6 +5115,7 @@ function getGameDate(key,groups){
 
 function rSpravca(){
   const el=$('spravca-list');if(!el)return;
+  if(dedupeClosed()>0)save(); // ✅ vyčisti duplicitné uzavreté účty (starý bug)
   initArenaFilter();
   let bills=getSFBills();
   // Arena filter
@@ -5218,10 +5275,11 @@ function rSpravca(){
                   ${isPaid?`Uhradená ${paidDate}`:'Neuhradená'}
                 </label>
               </div>`:isInv?`<div style="margin-top:3px;font-size:9px;color:${isPaid?'var(--pur)':'var(--amb);font-style:italic'};">${isPaid?'✅ Uhradená '+paidDate:'⏳ Čaká na úhradu'}</div>`:''}
-              <div style="display:flex;gap:3px;margin-top:5px;">
+              <div style="display:flex;gap:3px;margin-top:5px;flex-wrap:wrap;">
                 <button class="btn xs B" onclick="openEPayM('${w.id}')" title="Zmeniť platbu">✎ Platba</button>
                 ${admUnlocked?`<button class="btn xs T" onclick="openEditAmt('${w.id}')" title="Upraviť sumu">✎ Suma</button>`:''}
-                <button class="btn xs A" onclick="openReopen('${w.id}')" title="Znovu otvoriť">↩</button>
+                <button class="btn xs A" onclick="openReopen('${w.id}')" title="Znovu otvoriť účet">↩</button>
+                ${admUnlocked?`<button class="btn xs R" onclick="adminDeleteBill('${w.id}')" title="Zmazať účet (duplikát/chyba)">🗑</button>`:''}
               </div>
             </div>`;}).join('')}
           </div>
@@ -8122,6 +8180,7 @@ function buildTimeStr(ded, sess, grpBills){
   // ✅ Self-heal pri štarte: odober uzavreté akcie (s odmenou) zo sessArr,
   //    keby tam zostali z predošlého pokazeného stavu (uzavretá akcia stále otvorená).
   if(_pruneClosedFromSessArr()>0)saveAll();
+  if(dedupeClosed()>0)saveAll(); // ✅ vyčisti duplicitné uzavreté účty pri štarte
 
   // ✅ Zobraz verziu — okamžitá kontrola, či beží nová verzia alebo cache
   const _vEl=$('app-version-lbl');if(_vEl)_vEl.textContent='v'+APP_VERSION;
