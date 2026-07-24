@@ -1133,7 +1133,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.23';
+const APP_VERSION='2026.07.24';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1223,6 +1223,37 @@ function _call(fn,...args){if(typeof window[fn]==='function'){window[fn](...args
 function getSess(){return sessArr.find(s=>s.key===curSid)||null;}
 function getWbs(){if(!curSid)return[];if(!wbMap[curSid])wbMap[curSid]=[];return wbMap[curSid];}
 function setWbs(a){if(curSid)wbMap[curSid]=a;}
+// ✅ Nekolízne ID náramku — Date.now() sám nestačí: dva bulk-addy v tej istej ms
+//    alebo dve NTP-zosynchronizované zariadenia vytvorili rovnaké ID → duplikát/tichý drop.
+//    Pridávame per-zariadenie náhodnú značku + monotónny čítač.
+let _wbSeq=0;
+function _deviceTag(){let d=LS.g('pb_device_id','');if(!d){d=Math.random().toString(36).slice(2,7);LS.s('pb_device_id',d);}return d;}
+function newWbId(){return 'H-'+Date.now().toString(36)+'-'+_deviceTag()+'-'+(_wbSeq++).toString(36);}
+// ✅ Odstráň duplikáty s rovnakým ID zo session (ponechá bohatší záznam — viac položiek/gul.)
+function dedupeWbs(key){
+  const arr=wbMap[key];if(!Array.isArray(arr))return 0;
+  const seen=new Map();let removed=0;
+  arr.forEach(w=>{
+    const ex=seen.get(w.id);
+    if(!ex){seen.set(w.id,w);return;}
+    // ponechaj ten s väčším "obsahom" (položky + vystrelené guličky)
+    const score=x=>((x.items||[]).length*100)+(x.bUsed||0)+((x.dG||[]).length*10);
+    if(score(w)>score(ex)){seen.set(w.id,w);}
+    removed++;
+  });
+  if(removed){wbMap[key]=[...seen.values()];}
+  return removed;
+}
+// Ďalšie poradové číslo hráča — podľa najvyššieho existujúceho "Player/Hráč N"
+// (nie podľa počtu — inak po odobraní hráča vzniknú duplicitné mená)
+function nextPlayerNum(){
+  const wbs=getWbs();let mx=0;
+  const re=/^(?:Player|Hráč)\s+(\d+)$/i;
+  wbs.forEach(w=>{const m=(w.name||'').match(re);if(m){mx=Math.max(mx,parseInt(m[1])||0);}});
+  // zohľadni aj uzavreté účty tejto session, nech sa číslo neopakuje po platbe
+  closed.filter(w=>w.sKey===curSid).forEach(w=>{const m=(w.name||'').match(re);if(m){mx=Math.max(mx,parseInt(m[1])||0);}});
+  return mx+1;
+}
 function isAS(){const s=getSess();return s&&s.activity&&s.activity.toLowerCase().includes('airsoft');}
 function actKey(){return curSid||'nosess';}
 function getPkg(w){for(const it of w.items){const p=prods.find(x=>x.id===it.id);if(p&&p.pkgId)return PKG[p.pkgId];}return null;}
@@ -1763,6 +1794,7 @@ function _mergeSessFromCloud(d){
       (d.wbs||[]).forEach(rw=>{if(!localIds.has(rw.id)){localWbs.push(rw);localIds.add(rw.id);}});
       wbMap[key]=localWbs;
     }
+    dedupeWbs(key); // ✅ poistka proti duplicitným ID (rovnaké ID z dvoch zariadení)
   } else if(d.status==='closed'){
     // ✅ Session was closed on another device — remove it from local sessArr if still present
     const existIdx=sessArr.findIndex(s=>s.key===key);
@@ -2483,7 +2515,7 @@ function startSess(){
     const now=new Date().toISOString();
     signups.forEach((su,idx)=>{
       const c=su.pb_customers||{};
-      const pid='SI'+(Date.now()%100000)+'-'+(idx+1);
+      const pid=newWbId();
       const pname=c.nick||c.fullname||('Hráč '+(idx+1));
       const pemail=c.email||'';
       wbMap[key].push({
@@ -2509,7 +2541,7 @@ function startSess(){
     if(_anonNeeded>0){
       const _sess2=sessArr.find(s=>s.key===key)||{};
       for(let i=0;i<Math.min(_anonNeeded,30-signups.length);i++){
-        const _pid='R'+(Date.now()%100000)+'-'+(signups.length+i+1);
+        const _pid=newWbId();
         const _pname=(currentLang==='en'?'Player':'Hráč')+' '+(signups.length+i+1);
         wbMap[key].push({id:_pid,name:_pname,email:'',items:[],sKey:key,sArena:_sess2.arena,sInstr:_sess2.instructor,sAct:_sess2.activity,openedAt:new Date().toISOString(),bUsed:0,bLoad:0,dG:[],pkgDone:false});
       }
@@ -2524,7 +2556,7 @@ function startSess(){
     const res=_pendingReservation;
     const count=Math.min(res.players,30);
     for(let i=0;i<count;i++){
-      const pid='R'+(Date.now()%100000)+'-'+(i+1);
+      const pid=newWbId();
       const pname=i===0&&res.custName?res.custName:((currentLang==='en'?'Player':'Hráč')+' '+(i+1));
       const pemail=i===0?res.custEmail||'':'';
       const sess=sessArr.find(s=>s.key===key)||{};
@@ -2767,17 +2799,16 @@ function addPlayer(){
   // If input is a pure number, add that many players
   const num=parseInt(nm);
   if(!isNaN(num)&&String(num)===nm&&num>0&&num<=50){
-    const wbs=getWbs();const startIdx=wbs.length+1;
+    let startIdx=nextPlayerNum();
     for(let i=0;i<num;i++){
-      const idx=startIdx+i;
-      assignWb('H-'+Date.now()+'-'+i,t('player-default')+' '+idx);
+      assignWb(newWbId(),t('player-default')+' '+(startIdx+i));
     }
     $('cname').value='';if($('cemail')){$('cemail').value='';hideSuggestions();}$('cname').focus();
     toast(num+' hráčov pridaných');
     return;
   }
   const email=$('cemail')?.value?.trim()||'';
-  assignWb('H-'+Date.now(),nm,email);
+  assignWb(newWbId(),nm,email);
   $('cname').value='';if($('cemail')){$('cemail').value='';hideSuggestions();}$('cname').focus();
 }
 // totBalls = total balls purchased (pkg balls + all ammo added)
@@ -3188,6 +3219,8 @@ function addXH(mode){
 }
 // ══ WRISTBANDS ══
 function rWbs(){
+  // ✅ Poistka: ak sa v session objavili duplicitné ID (starý bug / merge), zlúč ich
+  if(curSid&&dedupeWbs(curSid)>0){save();}
   const el=$('wlist');const ar=$('all-row');const wbs=getWbs();
   // Update section title with correct count
   const titleEl=$('wb-section-title');if(titleEl)titleEl.innerHTML=`${t('players-added')} <span id="wbcnt" style="color:var(--red);">${wbs.length?'('+wbs.length+')':''}</span>`;
