@@ -492,7 +492,7 @@ textarea{resize:none;line-height:1.5;}
             <!-- Agency PB quick status bar -->
             <div id="agency-status-bar" style="display:none;background:var(--abg);border:.5px solid var(--abd);border-radius:var(--rs);padding:7px 12px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
               <div style="font-size:11px;color:var(--amb);font-weight:600;" id="agency-status-text">🏢 Agentúra</div>
-              <button class="btn xs A" id="agency-pay-all-extras-btn" onclick="payAllAgencyExtras()" style="display:none;" title="Zaplatiť doplnky všetkým agency hráčom">💳 Zaplatiť doplnky všetkým</button>
+              <button class="btn xs A" id="agency-pay-all-extras-btn" onclick="payAllAgencyExtras()" style="display:none;" data-i18n="agency-pay-all" data-i18n-title="agency-pay-all-title" title="Zaplatiť doplnky všetkým agency hráčom">💳 Zaplatiť doplnky všetkým</button>
             </div>
             <div id="wb-total-bar" style="display:none;background:var(--bg2);border:.5px solid var(--b1);border-radius:var(--rs);padding:6px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
             <span style="font-size:11px;color:var(--t3);" data-i18n="group-total">Celkový obrat skupiny</span>
@@ -1147,7 +1147,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.25c';
+const APP_VERSION='2026.07.25d';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1287,7 +1287,7 @@ function reopenWholeSession(key){
   closed=closed.filter(w=>(w.sKey||'unknown')!==key);
   curSid=key;selId=null;chkd=new Set();
   save();showApp();gT('reg');rWbs();rBill();rPbt();rDrk();rAppSessBar();
-  toast(`🔄 Akcia oživená — ${bills.length} hráčov otvorených. Uprav a znova uzavri.`);
+  toast((currentLang==='en'?`🔄 Game revived — ${bills.length} players open. Edit and close again.`:`🔄 Akcia oživená — ${bills.length} hráčov otvorených. Uprav a znova uzavri.`));
 }
 // ✅ Admin: natrvalo zmazať uzavretý účet (napr. duplikát z chyby) — s heslom a auditom
 function adminDeleteBill(id){
@@ -1844,7 +1844,8 @@ function _mergeSessFromCloud(d){
   // ✅ KRITICKÉ: ak má session lokálne vyplnenú odmenu (pout), bola tu definitívne uzavretá.
   //    Cloud 'active' (napr. z druhého zariadenia, ktoré ju ešte má otvorenú) ju NESMIE vzkriesiť.
   const localPout=lPouts()[key];
-  if(localPout){
+  const _hasOpenLocal=wbMap[key]&&wbMap[key].length;
+  if(localPout&&!_hasOpenLocal){ // ✅ NEmaž ak má lokálne otvorených hráčov (dodatočne pridaný / oživenie)
     // Session je uzavretá tu — odober ju zo sessArr ak sa medzitým objavila, a NEpridávaj späť.
     const exIdx=sessArr.findIndex(s=>s.key===key);
     if(exIdx>=0){
@@ -1899,11 +1900,14 @@ function _mergeSessFromCloud(d){
 function _pruneClosedFromSessArr(){
   const pouts=lPouts();
   const before=sessArr.length;
-  const removed=sessArr.filter(s=>pouts[s.key]);
+  // ✅ Odober len uzavreté sessie BEZ otvorených hráčov. Ak má session otvorených hráčov
+  //    (napr. dodatočne pridaný hráč cez '+' alebo oživenie), je reálne aktívna — NEMAŽ.
+  const removed=sessArr.filter(s=>pouts[s.key]&&!(wbMap[s.key]&&wbMap[s.key].length));
   if(!removed.length)return 0;
+  const rmKeys=new Set(removed.map(s=>s.key));
   removed.forEach(s=>{delete wbMap[s.key];});
-  sessArr=sessArr.filter(s=>!pouts[s.key]);
-  if(curSid&&pouts[curSid]){curSid=sessArr.length?sessArr[sessArr.length-1].key:null;selId=null;chkd=new Set();}
+  sessArr=sessArr.filter(s=>!rmKeys.has(s.key));
+  if(curSid&&rmKeys.has(curSid)){curSid=sessArr.length?sessArr[sessArr.length-1].key:null;selId=null;chkd=new Set();}
   console.log('[pruneClosed] Odobraných '+removed.length+' uzavretých sessioní zo sessArr:',removed.map(s=>s.key));
   return before-sessArr.length;
 }
@@ -2668,7 +2672,7 @@ function rAppSessBar(){
     const statusIcon=hasAgency&&allAgencyClean?' ✅':'';
     const instrArr=getSessionInstructors(s);
     const name=`${s.arena}·${instrArr.map(n=>n.split(' ')[0]).join('+')}${sessRunSuffix(s)}`;
-    const tooltip=`${s.arena} · ${s.activity} · ${instrArr.join(' + ')}${sessRunSuffix(s)}${hasAgency&&!allAgencyClean?' — nezaplatené doplnky':''}`;
+    const tooltip=`${s.arena} · ${s.activity} · ${instrArr.join(' + ')}${sessRunSuffix(s)}${hasAgency&&!allAgencyClean?' — '+t('agency-unpaid-extras'):''}`;
     return`<span class="spill ${isCur?'cur':''}" onclick="swSess('${s.key}')" title="${tooltip}">${name}${statusIcon}${isCur?' ●':''}</span>`;
   }).join('');
   // Update multi-session bottom bar
@@ -3071,12 +3075,12 @@ function confirmDrink(){
       if(freeSlots>0){w.dG.push(drink);count++;}
     });
     window._grpDrinkEligible=null;$('m-drink').querySelector('.mt').textContent='🥤 Vydať nápoj';
-    cm('m-drink');save();rDrk();rWbs();rBill();toast(`🥤 ${drink} vydaný ${count} hráčom zadarmo`);
+    cm('m-drink');save();rDrk();rWbs();rBill();toast((currentLang==='en'?`🥤 ${drink} dispensed free to ${count} player(s)`:`🥤 ${drink} vydaný ${count} hráčom zadarmo`));
   }else{
     // Single player drink
     const w=wbs.find(w=>w.id===selId);if(!w)return;
     if(!w.dG)w.dG=[];w.dG[dSlotIdx]=drink;
-    cm('m-drink');save();rDrk();rWbs();rBill();toast(`🥤 ${w.dG[dSlotIdx]} vydaný zadarmo`);
+    cm('m-drink');save();rDrk();rWbs();rBill();toast((currentLang==='en'?`🥤 ${w.dG[dSlotIdx]} dispensed free`:`🥤 ${w.dG[dSlotIdx]} vydaný zadarmo`));
   }
 }
 // ══ PRODUCTS (P2: filter mode-based; P6: bulk package assignment) ══
@@ -3289,7 +3293,7 @@ function addXH(mode){
       toast('Extra hodiny môže pridať len '+sessInstrsAXH.join(' alebo '));cm('m-xh');return;
     }
   }
-  if(mode==='split'){if(!wbs.length){toast(t('toast-no-players'));return;}const pp=parseFloat((p.price/wbs.length).toFixed(2));wbs.forEach(w=>{w.items.push({id:p.id,name:p.name+' (1/'+wbs.length+')',price:pp,qty:1,disc:0});});toast(`Extra hodina: ${fp(pp)}/hráč`);}
+  if(mode==='split'){if(!wbs.length){toast(t('toast-no-players'));return;}const pp=parseFloat((p.price/wbs.length).toFixed(2));wbs.forEach(w=>{w.items.push({id:p.id,name:p.name+' (1/'+wbs.length+')',price:pp,qty:1,disc:0});});toast((currentLang==='en'?`Extra hour: ${fp(pp)}/player`:`Extra hodina: ${fp(pp)}/hráč`));}
   else if(mode==='group'){const w=wbs.find(w=>w.id===selId)||(wbs.length?wbs[0]:null);if(!w){toast(t('toast-select-player'));return;}w.items.push({id:p.id,name:p.name+' (skupina)',price:p.price,qty:1,disc:0});toast('Extra hodina – skupinový účet');}
   else if(mode==='specific'){const tid=$('xh-sel').value;const w=wbs.find(w=>w.id===tid);if(!w){toast(t('toast-player-not-found'));return;}w.items.push({id:p.id,name:p.name,price:p.price,qty:1,disc:0});toast('Extra hodina → '+w.name);}
   cm('m-xh');save();rBill();rWbs();
@@ -3370,10 +3374,11 @@ function updAgencyStatusBar(){
   const withExtras=agencyWbs.filter(w=>agencyExtraItems(w).length>0);
   const readyForInvoice=agencyWbs.filter(w=>agencyExtraItems(w).length===0);
   if(withExtras.length>0){
-    txt.innerHTML=`🏢 Agentúra · <strong style="color:var(--amb);">${withExtras.length} hráč${withExtras.length>1?'i':''}</strong> má${withExtras.length>1?'jú':''} nezaplatené doplnky`;
+    const n=withExtras.length,pl=n>1;
+    txt.innerHTML=`🏢 ${t('agency-lbl')} · <strong style="color:var(--amb);">${n} ${pl?t('agency-player-pl'):t('agency-player-sg')}</strong> ${pl?t('agency-has-pl'):t('agency-has-sg')} ${t('agency-unpaid-extras')}`;
     btn.style.display='inline-flex';
   }else{
-    txt.innerHTML=`🏢 Agentúra · <strong style="color:var(--pur);">Všetci ready</strong> — uzavretie na faktúru`;
+    txt.innerHTML=`🏢 ${t('agency-lbl')} · <strong style="color:var(--pur);">${t('agency-all-ready')}</strong> — ${t('agency-close-invoice')}`;
     btn.style.display='none';
   }
 }
@@ -3492,7 +3497,7 @@ function assignWb(id,name,email){
   const closedDup=closed.find(c=>c.id===id);
   if(closedDup){toast('ID '+id+' už bol použitý (uzavretý účet '+closedDup.name+')');return;}
   wbs.push({id,name:name||'Hráč',email:email||'',items:[],sKey:actKey(),sArena:s?.arena,sInstr:s?.instructor,sAct:s?.activity,openedAt:new Date().toISOString(),bUsed:0,bLoad:0,dG:[],pkgDone:false});
-  setWbs(wbs);selId=id;save();rWbs();rBill();rPbt();rDrk();rProds();toast(`#${wbs.length} ${name||'Hráč'} pridaný`);
+  setWbs(wbs);selId=id;save();rWbs();rBill();rPbt();rDrk();rProds();toast((currentLang==='en'?`#${wbs.length} ${name||'Player'} added`:`#${wbs.length} ${name||'Hráč'} pridaný`));
 }
 function payAll(){
   if(!currentUser){toast(t('toast-login-required'));return;}
@@ -3998,7 +4003,7 @@ function confirmAgencyPay(){
   if($('p-spravca')?.classList.contains('on'))rSpravca();
   if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
   const extAmt=(w.paidExtras||[]).filter(e=>e.payM===agencyExtrasPayM).reduce((s,e)=>s+e.price*e.qty*(1-(e.disc||0)/100),0);
-  toast(`${agencyExtrasPayM==='card'?'💳':'💵'} Doplnky zaplatené: ${fp(extAmt)} · Zostatok (balík) na faktúru`);
+  toast((currentLang==='en'?`${agencyExtrasPayM==='card'?'💳':'💵'} Extras paid: ${fp(extAmt)} · Remainder (package) to invoice`:`${agencyExtrasPayM==='card'?'💳':'💵'} Doplnky zaplatené: ${fp(extAmt)} · Zostatok (balík) na faktúru`));
 }
 
 function confirmPay(){
@@ -4013,7 +4018,7 @@ function confirmPay(){
   if($('p-closed')?.classList.contains('on'))rClosed();
   if($('p-spravca')?.classList.contains('on'))rSpravca();
   if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
-  toast(`${payM==='cash'?'💵 Hotovosť':payM==='invoice'?'🧾 Faktúra':'💳 Karta'} – zaplatené`);
+  toast((currentLang==='en'?`${payM==='cash'?'💵 Cash':payM==='invoice'?'🧾 Invoice':'💳 Card'} – paid`:`${payM==='cash'?'💵 Hotovosť':payM==='invoice'?'🧾 Faktúra':'💳 Karta'} – zaplatené`));
   playPaySound();const pf=document.createElement('div');pf.className='pay-flash';pf.textContent='✅';document.body.appendChild(pf);setTimeout(()=>pf.remove(),1000);
   if(newWbs.length===0){checkLastPlayerClosed(snapSid);}
 }
@@ -4077,7 +4082,7 @@ function openCloseSess(key,bills){
   // Block close if any agency player still has unpaid extras
   const withExtras=agencyPending.filter(w=>agencyExtraItems(w).length>0);
   if(withExtras.length>0){
-    toast(`❌ ${withExtras.map(w=>w.name).join(', ')} má nezaplatené doplnky. Najprv zaplať doplnky.`);
+    toast(`❌ ${withExtras.map(w=>w.name).join(', ')} — ${t('agency-unpaid-extras')}. ${t('agency-toast-pay-first')}`);
     return;
   }
   // Auto-close agency players with only packages → invoice
@@ -4232,7 +4237,7 @@ function _doConfirmGrp(){
   if($('p-closed')?.classList.contains('on'))rClosed();
   if($('p-spravca')?.classList.contains('on'))rSpravca();
   if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
-  toast(`Skupinová platba ${gPayM==='cash'?'💵':gPayM==='invoice'?'🧾':'💳'} potvrdená`);
+  toast((currentLang==='en'?`Group payment ${gPayM==='cash'?'💵':gPayM==='invoice'?'🧾':'💳'} confirmed`:`Skupinová platba ${gPayM==='cash'?'💵':gPayM==='invoice'?'🧾':'💳'} potvrdená`));
   playPaySound();const pf=document.createElement('div');pf.className='pay-flash';pf.textContent='✅';document.body.appendChild(pf);setTimeout(()=>pf.remove(),1000);
   pendGrp=null;
   if(newWbs.length===0){checkLastPlayerClosed(sk);}
@@ -4399,7 +4404,7 @@ function adminForceCloseSess(sKey){
     setTimeout(()=>sbPush(),800);
   }
   save();rAppSessBar();rWbs();rBill();rOpen();updSessBadge();updInvBadge();
-  toast(`✅ Hra "${label}" uzavretá adminom`);
+  toast((currentLang==='en'?`✅ Game "${label}" closed by admin`:`✅ Hra "${label}" uzavretá adminom`));
   // Ak boli uzavretí hráči — zobraziť report
   if(closedCount>0)setTimeout(()=>openReport(sKey),400);
 }
@@ -6312,7 +6317,103 @@ function playErrorSound(){
     osc.start(ctx.currentTime);osc.stop(ctx.currentTime+0.3);
   }catch(e){}
 }
-let tT;function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('on');clearTimeout(tT);tT=setTimeout(()=>t.classList.remove('on'),2800);}
+// EN preklady statických toast hlášok — exact full-string lookup (0 úprav call-site).
+const TOAST_EN={
+  '⚠️ Úložisko plné! Vymaž staré zálohy v Nastaveniach.':'⚠️ Storage full! Delete old backups in Settings.',
+  'Všetky zapamätané prihlásenia zrušené':'All remembered logins cleared',
+  'Len admin môže oživiť akciu':'Only admin can revive a game',
+  'Akcia nemá uzavreté účty':'Game has no closed accounts',
+  'Len admin môže mazať účty':'Only admin can delete accounts',
+  'Účet nenájdený':'Account not found',
+  '❌ Nesprávne heslo':'❌ Wrong password',
+  'Len admin môže potvrdiť úhradu faktúry':'Only admin can confirm invoice payment',
+  '⚠️ Akcia bola uzavretá na inom zariadení':'⚠️ Game was closed on another device',
+  'Lokálna záloha vytvorená':'Local backup created',
+  'Cloud záloha vytvorená ✓':'Cloud backup created ✓',
+  'Chyba pri vytváraní zálohy':'Error creating backup',
+  'Záloha vymazaná':'Backup deleted',
+  'Chyba pri mazaní zálohy':'Error deleting backup',
+  'JSON záloha stiahnutá':'JSON backup downloaded',
+  'Záloha nenájdená':'Backup not found',
+  'Chyba pri obnove zálohy':'Error restoring backup',
+  '✓ Dáta obnovené! Záloha pred obnovou uložená.':'✓ Data restored! Pre-restore backup saved.',
+  'Žiadna záloha na import':'No backup to import',
+  '🟢 Pripojenie obnovené':'🟢 Connection restored',
+  'Zadaj heslo pre prvé prihlásenie':'Enter password for first login',
+  'Nesprávne staré heslo':'Wrong old password',
+  'Heslá sa nezhodujú':'Passwords do not match',
+  'Heslo zmenené':'Password changed',
+  'Vyber areál':'Select arena',
+  '✅ NFC bridge pripojený':'✅ NFC bridge connected',
+  'NFC bridge odpojený':'NFC bridge disconnected',
+  'Žiadny označený hráč nemá dostupný nápoj zadarmo':'No selected player has a free drink available',
+  'Nemáš oprávnenie upravovať túto hru':'You are not allowed to edit this game',
+  'Balík už bol pridaný. Najprv odstráň existujúci.':'Package already added. Remove the existing one first.',
+  'Záloha už bola pridelená v tejto akcii (max 1× na akciu)':'Deposit already assigned in this game (max 1× per game)',
+  'Extra hodina – skupinový účet':'Extra hour – group account',
+  'Žiadni hráči s doplnkami':'No players with extras',
+  'Chyba: žiadni hráči':'Error: no players',
+  'Vyber spôsob platby doplnkov (Hotovosť / Karta)':'Select extras payment method (Cash / Card)',
+  'Nemáš oprávnenie upravovať tohto hráča':'You are not allowed to edit this player',
+  'Nemáš oprávnenie na žiadneho hráča':'You have no permission for any player',
+  'Označ hráčov (musíš byť ich inštruktor)':'Select players (you must be their instructor)',
+  'Nemáš oprávnenie upravovať tento účet':'You are not allowed to edit this account',
+  'Účet je nulový — poukaz nie je možné uplatniť':'Account is zero — voucher cannot be redeemed',
+  'Nemáš oprávnenie uzavrieť tento účet':'You are not allowed to close this account',
+  '🏢 Agentúra: balík sa uzavrie na faktúru pri Uzavrieť akciu':'🏢 Agency: package will be invoiced when closing the game',
+  '🧾 Faktúra je len pre agentúrne akcie. Bežnému hráčovi ju môže povoliť len admin.':'🧾 Invoice is only for agency games. Only admin can allow it for a regular player.',
+  'Žiadne doplnky na platbu':'No extras to pay',
+  'Vyber spôsob platby doplnkov':'Select extras payment method',
+  'Žiadne doplnky':'No extras',
+  'Akcia uzavretá ✓ · Záloha sa sťahuje...':'Game closed ✓ · Backup downloading...',
+  '❌ Len agentúra môže platiť faktúrou':'❌ Only agency can pay by invoice',
+  'Účet nemá priradenú akciu — nedá sa otvoriť':'Account has no assigned game — cannot open',
+  'Hráč s týmto ID už je otvorený':'A player with this ID is already open',
+  'Nemáš oprávnenie na tento účet':'You have no permission for this account',
+  'Hráč nemá žiadne položky':'Player has no items',
+  'Len admin môže použiť túto funkciu':'Only admin can use this function',
+  'Session nenájdená':'Session not found',
+  '❌ Nesprávne admin heslo':'❌ Wrong admin password',
+  'Chyba: žiadna akcia vybraná':'Error: no game selected',
+  'Časy uložené pre túto akciu ✓':'Times saved for this game ✓',
+  'Akcia archivovaná a vymazaná':'Game archived and deleted',
+  'Len admin môže pridať hráča do uzavretej akcie':'Only admin can add a player to a closed game',
+  '➕ Nový hráč pridaný — pridaj mu produkty a uzavri účet':'➕ New player added — add products and close the account',
+  'Odmena editovateľná':'Reward editable',
+  'XLSX sa načítava':'XLSX is loading',
+  'Žiadne uzavreté účty':'No closed accounts',
+  '📊 Excel exportovaný ✓':'📊 Excel exported ✓',
+  'Žiadne akcie za vybrané obdobie':'No games in the selected period',
+  'Export hotový ✓':'Export done ✓',
+  'Žiadne účty za obdobie':'No accounts in the period',
+  'Períodický export OK':'Periodic export OK',
+  'Zadaj názov':'Enter a name',
+  'Firemné údaje uložené':'Company details saved',
+  'Použi admin sekciu':'Use the admin section',
+  'Vyplň obe polia':'Fill in both fields',
+  'Heslo zmenené. Prihláste sa znova.':'Password changed. Please log in again.',
+  'Google Drive prepojený ✓':'Google Drive connected ✓',
+  'Google Drive odpojený':'Google Drive disconnected',
+  '✅ Záloha nahraná na Google Drive':'✅ Backup uploaded to Google Drive',
+  'Žiadni zákazníci na synchronizáciu':'No customers to sync',
+  '🔗 Link skopírovaný!':'🔗 Link copied!',
+  '📱 Kiosk link skopírovaný!':'📱 Kiosk link copied!',
+  'Vlož Service Account JSON':'Paste Service Account JSON',
+  '🔄 Pripájam Google Kalendár...':'🔄 Connecting Google Calendar...',
+  '❌ Nepodarilo sa pripojiť. Skontroluj credentials JSON a Calendar API.':'❌ Failed to connect. Check credentials JSON and Calendar API.',
+  'Chyba pri načítaní eventu':'Error loading event',
+  'Záznam zmazaný':'Record deleted',
+  'Zoznam vymazaný':'List cleared',
+  'Google Kalendár nie je nastavený':'Google Calendar is not set up',
+  'Chyba pri čítaní kalendára':'Error reading calendar',
+  'Chyba pri skenovaní':'Error scanning',
+  'Client ID uložený · Prihlasovanie...':'Client ID saved · Signing in...',
+  'nfc_bridge.py stiahnutý':'nfc_bridge.py downloaded',
+  'Najprv sa pripojiť':'Connect first',
+  'NFC Bridge pripojený ✓':'NFC Bridge connected ✓',
+  'NFC Bridge odpojený':'NFC Bridge disconnected'
+};
+let tT;function toast(msg){if(currentLang==='en'&&TOAST_EN[msg])msg=TOAST_EN[msg];const t=$('toast');t.textContent=msg;t.classList.add('on');clearTimeout(tT);tT=setTimeout(()=>t.classList.remove('on'),2800);}
 // ══ PWA ══
 // ══ MANIFEST (data URI — works on iOS Safari) ══
 (()=>{
@@ -7656,7 +7757,7 @@ async function scanCalWarnings(days){
     renderCustWarnings();
     const n=Object.keys(LS.g('pb_cal_warnings',{})).length;
     pushCustomerBehaviorToCloud(); // sprístupni botovi
-    toast(`✅ Sken hotový — ${n} zákazníkov so záznamom z ${events.length} akcií`);
+    toast((currentLang==='en'?`✅ Scan done — ${n} customers with records from ${events.length} games`:`✅ Sken hotový — ${n} zákazníkov so záznamom z ${events.length} akcií`));
   }catch(e){console.error('[scanCalWarnings]',e);toast('Chyba pri skenovaní');}
 }
 
@@ -8001,6 +8102,14 @@ const LANG={
     'del-sess-warn':'⚠ Akcia bude archivovaná pred vymazaním. Obnoviť ju bude možné v sekcii Archív.',
     'del-sess-btn':'Vymazať & archivovať',
     'change-pay-hdr':'Zmeniť spôsob platby','change-pay-text':'Naozaj zmeniť?','confirm':'Potvrdiť',
+    'pay-extras-btn':'💳 Zaplatiť doplnky','close-agency-bill':'🏢 Agentúra — Uzavrieť účet',
+    'extras-section':'💳/💵 Doplnky – platí hráč','pkg-section-inv':'🧾 Balík – platí spoločnosť (faktúra)',
+    // Agency dynamic strings
+    'agency-lbl':'Agentúra','agency-unpaid-extras':'nezaplatené doplnky',
+    'agency-player-sg':'hráč','agency-player-pl':'hráči','agency-has-sg':'má','agency-has-pl':'majú',
+    'agency-all-ready':'Všetci ready','agency-close-invoice':'uzavretie na faktúru',
+    'agency-pay-all':'💳 Zaplatiť doplnky všetkým','agency-pay-all-title':'Zaplatiť doplnky všetkým agency hráčom',
+    'agency-toast-pay-first':'Najprv zaplať doplnky.',
     'cat-Záloha a poukaz':'Záloha a poukaz',
     // Toasts
     'toast-login-required':'Prihlás sa','toast-no-permission':'Nemáš oprávnenie',
@@ -8136,6 +8245,12 @@ const LANG={
     'change-pay-hdr':'Change payment method','change-pay-text':'Really change?','confirm':'Confirm',
     'pay-extras-btn':'💳 Pay extras','close-agency-bill':'🏢 Agency — Close account',
     'extras-section':'💳/💵 Extras — player pays','pkg-section-inv':'🧾 Package — company invoice',
+    // Agency dynamic strings
+    'agency-lbl':'Agency','agency-unpaid-extras':'unpaid extras',
+    'agency-player-sg':'player','agency-player-pl':'players','agency-has-sg':'has','agency-has-pl':'have',
+    'agency-all-ready':'All ready','agency-close-invoice':'close via invoice',
+    'agency-pay-all':'💳 Pay extras for all','agency-pay-all-title':'Pay extras for all agency players',
+    'agency-toast-pay-first':'Pay the extras first.',
     'cat-Záloha a poukaz':'Deposit & Voucher',
     // Toasts
     'toast-login-required':'Please log in','toast-no-permission':'No permission',
@@ -8210,6 +8325,11 @@ function applyLang(lang){
   document.querySelectorAll('[data-i18n]').forEach(el=>{
     const key=el.dataset.i18n;const val=t(key);
     if(val&&val!==key&&el.children.length===0)el.textContent=val;
+  });
+  // ✅ Translate title tooltips via data-i18n-title attribute
+  document.querySelectorAll('[data-i18n-title]').forEach(el=>{
+    const key=el.dataset.i18nTitle;const val=t(key);
+    if(val&&val!==key)el.title=val;
   });
   // ✅ Translate placeholders via data-ph attribute
   document.querySelectorAll('[data-ph]').forEach(el=>{
