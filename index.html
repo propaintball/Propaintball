@@ -561,6 +561,8 @@ textarea{resize:none;line-height:1.5;}
           <span class="cc" onclick="setSF('week',this)">Týždeň</span>
           <span class="cc" onclick="setSF('month',this)">Mesiac</span>
           <span class="cc" onclick="setSF('prevmonth',this)">Predošlý mesiac</span>
+          <span class="cc" onclick="setSF('year',this)">Tento rok</span>
+          <span class="cc" onclick="setSF('prevyear',this)">Predošlý rok</span>
           <span class="cc" onclick="setSF('all',this)">Všetko</span>
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
@@ -617,7 +619,8 @@ textarea{resize:none;line-height:1.5;}
           <span class="cc" onclick="setAF('month',this)">Tento mesiac</span>
           <span class="cc on" onclick="setAF('prevmonth',this)">Predošlý mesiac</span>
           <span class="cc" onclick="setAF('3m',this)">3 mesiace</span>
-          <span class="cc" onclick="setAF('year',this)">Rok</span>
+          <span class="cc" onclick="setAF('year',this)">Tento rok</span>
+          <span class="cc" onclick="setAF('prevyear',this)">Predošlý rok</span>
           <span class="cc" onclick="setAF('all',this)">Všetko</span>
           <input type="date" id="aff" style="width:118px;font-size:11px;padding:4px 7px;" onchange="setAF('custom',null)"/>
           <span style="font-size:11px;color:var(--t3);">–</span>
@@ -1144,7 +1147,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.25b';
+const APP_VERSION='2026.07.25c';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -3383,7 +3386,9 @@ function payAllAgencyExtras(){
   if(!withExtras.length){toast('Žiadni hráči s doplnkami');return;}
   _bulkAgencyWbIds=withExtras.map(w=>w.id); // safe reference, no HTML injection
   const totalExt=withExtras.reduce((s,w)=>s+agencyExtraItems(w).reduce((t,i)=>t+i.price*i.qty*(1-(i.disc||0)/100),0),0);
+  document.getElementById('bulk-agency-modal')?.remove();
   const modal=document.createElement('div');
+  modal.id='bulk-agency-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9000;display:flex;align-items:center;justify-content:center;';
   modal.innerHTML=`<div style="background:var(--card);border-radius:var(--r);padding:20px;min-width:300px;max-width:400px;width:90%;">
     <div style="font-size:15px;font-weight:700;margin-bottom:12px;">💳 Zaplatiť doplnky — ${withExtras.length} hráčov</div>
@@ -3394,7 +3399,7 @@ function payAllAgencyExtras(){
     </div>
     <div class="r2">
       <button class="btn G" onclick="confirmBulkAgencyExtras()">✓ Zaplatiť</button>
-      <button class="btn" onclick="this.closest('div[style*=fixed]').remove()">Zrušiť</button>
+      <button class="btn" onclick="document.getElementById('bulk-agency-modal').remove()">Zrušiť</button>
     </div>
   </div>`;
   document.body.appendChild(modal);
@@ -3405,21 +3410,21 @@ function confirmBulkAgencyExtras(){
   const wbIds=_bulkAgencyWbIds||[];
   if(!wbIds.length){toast('Chyba: žiadni hráči');return;}
   const payEl=$('bulk-po-c');const payM=payEl?.classList.contains('cash')?'cash':($('bulk-po-k')?.classList.contains('card')?'card':null);
-  if(!payM){toast(t('toast-select-pay'));return;}
-  const wbs=getWbs();let count=0;
+  if(!payM){toast('Vyber spôsob platby doplnkov (Hotovosť / Karta)');return;}
+  const wbs=getWbs();let count=0,sum=0;
   wbIds.forEach(id=>{
     const w=wbs.find(x=>x.id===id);if(!w)return;
     const extItems=agencyExtraItems(w);if(!extItems.length)return;
     if(!w.paidExtras)w.paidExtras=[];
-    extItems.forEach(i=>w.paidExtras.push({...i,payM}));
+    extItems.forEach(i=>{w.paidExtras.push({...i,payM});sum+=i.price*i.qty*(1-(i.disc||0)/100);});
     w.items=agencyPkgItems(w);count++;
   });
-  document.querySelector('div[style*="position:fixed"][style*="9000"]')?.remove();
+  document.getElementById('bulk-agency-modal')?.remove();
   save();rWbs();rBill();rPbt();rDrk();rAppSessBar();
   if($('p-closed')?.classList.contains('on'))rClosed();
   if($('p-spravca')?.classList.contains('on'))rSpravca();
   if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
-  toast(`${payM==='card'?'💳':'💵'} Doplnky zaplatené pre ${count} hráčov`);
+  toast(count?`${payM==='card'?'💳':'💵'} Doplnky ${fp(sum)} zaplatené (${count} hráčov) · balíky ostávajú na faktúru`:'Žiadne doplnky na zaplatenie');
 }
 
 // ── Invoice badge updater ──
@@ -3809,6 +3814,9 @@ let _depositPendClose=null;
 let _depositIsGroupPay=false;
 function checkDepositBeforeClose(wbId){
   const sess=getSess();if(!sess)return false;
+  // ✅ Agentúrne akcie nikdy nepoužívajú zálohu (základ ide na faktúru) — nepýtaj sa
+  const _wbsAll=getWbs();
+  if(_wbsAll.length&&_wbsAll.some(w=>isAgencyWb(w))&&!_wbsAll.some(w=>!isAgencyWb(w)&&billAmt(w)>0))return false;
   const depositProd=prods.find(p=>p.isDeposit);
   // Check if popup deposit is still valid (assigned player must still exist or be closed)
   if(sess.deposit){
@@ -5115,6 +5123,12 @@ function setSF(mode,el){
   }else if(mode==='prevmonth'){
     sFFrom=new Date(now.getFullYear(),now.getMonth()-1,1,0,0,0,0);
     sFTo=new Date(now.getFullYear(),now.getMonth(),1,0,0,0,0);
+  }else if(mode==='year'){
+    sFFrom=new Date(now.getFullYear(),0,1,0,0,0,0);
+    sFTo=new Date(now.getFullYear()+1,0,1,0,0,0,0);
+  }else if(mode==='prevyear'){
+    sFFrom=new Date(now.getFullYear()-1,0,1,0,0,0,0);
+    sFTo=new Date(now.getFullYear(),0,1,0,0,0,0);
   }else if(mode==='week'){
     const dow=now.getDay()||7;
     const mon=new Date(now.getFullYear(),now.getMonth(),now.getDate()-dow+1);
@@ -5306,6 +5320,7 @@ function rSpravca(){
           </div>
           <div style="font-size:11px;color:var(--t2);">👤 ${escHtml(fw.sInstr||'—')} &nbsp;·&nbsp; 📅 ${startStr}</div>
           <div style="font-size:10px;color:var(--t3);margin-top:1px;">🏁 ${endStr}</div>
+          ${note?`<div style="font-size:10px;color:var(--amb);margin-top:3px;background:var(--abg);border:.5px solid var(--abd);border-radius:6px;padding:3px 7px;display:inline-block;max-width:100%;">📝 ${escHtml(note)}</div>`:''}
         </div>
         <!-- Stats pills -->
         <div style="display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px;padding:8px 10px;flex-shrink:0;">
@@ -5499,7 +5514,8 @@ function setAF(mode,el){
   else if(mode==='prevmonth'){aFrom=new Date(now.getFullYear(),now.getMonth()-1,1);aTo=new Date(now.getFullYear(),now.getMonth(),1);}
   else if(mode==='month'){aFrom=new Date(now.getFullYear(),now.getMonth(),1);aTo=new Date(now.getFullYear(),now.getMonth()+1,1);}
   else if(mode==='3m'){aFrom=new Date(now.getFullYear(),now.getMonth()-2,1);aTo=null;}
-  else if(mode==='year'){aFrom=new Date(now.getFullYear(),0,1);aTo=null;}
+  else if(mode==='year'){aFrom=new Date(now.getFullYear(),0,1);aTo=new Date(now.getFullYear()+1,0,1);}
+  else if(mode==='prevyear'){aFrom=new Date(now.getFullYear()-1,0,1);aTo=new Date(now.getFullYear(),0,1);}
   else if(mode==='all'){aFrom=null;aTo=null;}
   else if(mode==='custom'){const f=$('aff').value,t=$('aft').value;aFrom=f?new Date(f+'T00:00:00'):null;aTo=t?new Date(t+'T23:59:59'):null;}
   rAnalyzy();
