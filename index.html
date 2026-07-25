@@ -1144,7 +1144,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.25';
+const APP_VERSION='2026.07.25b';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -4013,7 +4013,15 @@ function confirmPay(){
 function checkLastPlayerClosed(sid){
   const sk=sid||actKey();
   const pouts=lPouts();
-  if(pouts[sk]){return;} // payout already filled — don't re-open
+  if(pouts[sk]){
+    // ✅ Akcia už má odmenu (bola uzavretá) — napr. sme len dodatočne pridali a uzavreli
+    //    jedného hráča cez '+'. Session čisto dokonči, nenechávaj ju ako "zombie" v lište.
+    sessArr=sessArr.filter(s=>s.key!==sk);delete wbMap[sk];
+    if(curSid===sk){curSid=sessArr.length?sessArr[sessArr.length-1].key:null;selId=null;chkd=new Set();}
+    save();rAppSessBar();updSessBadge();
+    if($('p-spravca')?.classList.contains('on'))rSpravca();
+    return;
+  }
   const sessClosedBills=closed.filter(w=>w.sKey===sk);
   // Allow close even with 0 bills (e.g. all reopened)
   setTimeout(()=>{openCloseSess(sk,sessClosedBills);},400);
@@ -4257,7 +4265,7 @@ function confirmReopen(){
 // ══ EDIT AMOUNT (Správca) ══
 let _editAmtId=null;
 function openEditAmt(id){
-  if(!admUnlocked){toast(t('toast-admin-only'));return;}
+  if(!(admUnlocked||isAdmin())){toast(t('toast-admin-only'));return;}
   const w=closed.find(c=>c.id===id);if(!w){toast(t('toast-player-not-found'));return;}
   _editAmtId=id;
   $('m-editamt-info').innerHTML=`<strong style="color:var(--t1);">${escHtml(w.name)}</strong> · ${w.payM==='card'?'💳':w.payM==='invoice'?'🧾':'💵'} · Celkom: <strong>${fp(billAmt(w))}</strong>`;
@@ -5367,12 +5375,41 @@ function rSpravca(){
                 ${(admUnlocked||isAdmin())?`<button class="btn xs R" onclick="adminDeleteBill('${w.id}')" title="Odobrať hráča / zmazať účet">🗑</button>`:''}
               </div>
             </div>`;}).join('')}
+            ${(admUnlocked||isAdmin())?`<div class="player-card" onclick="addPlayerToClosedSession('${key}')" title="Pridať hráča do akcie" style="border:1.5px dashed var(--gbd);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;min-height:78px;color:var(--grn);">
+              <div style="font-size:30px;line-height:1;font-weight:300;">+</div>
+              <div style="font-size:10px;font-weight:600;margin-top:2px;">Pridať hráča</div>
+            </div>`:''}
           </div>
         </div>
       </div>
     </div>`;
   });
   el.innerHTML=html;
+}
+// ✅ Pridaj JEDNÉHO nového hráča do (uzavretej) akcie — ostatní zostanú uzavretí.
+//    Session sa reaktivuje len s novým hráčom → v pokladni mu pridáš produkty a uzavrieš ho.
+function addPlayerToClosedSession(key){
+  if(!isAdmin()){toast('Len admin môže pridať hráča do uzavretej akcie');return;}
+  const bills=closed.filter(w=>(w.sKey||'unknown')===key);
+  const fw=bills[0]||{};
+  let sess=sessArr.find(s=>s.key===key);
+  if(!sess){
+    sess={key,arena:fw.sArena||'',activity:fw.sAct||'',instructor:fw.sInstr||'',
+          instructors:fw.sInstr?[fw.sInstr]:[],date:fw.sDate||'',time:fw.sTime||'',
+          startedAt:new Date().toISOString(),calRunNumber:fw.sCalRunNumber||null,_addOnly:true};
+    sessArr.push(sess);
+  }
+  if(!wbMap[key])wbMap[key]=[];
+  curSid=key;
+  // ďalšie voľné číslo (z otvorených aj uzavretých účtov session)
+  const num=nextPlayerNum();
+  const pid=newWbId();
+  wbMap[key].push({id:pid,name:t('player-default')+' '+num,email:'',items:[],sKey:key,
+    sArena:sess.arena,sInstr:sess.instructor,sAct:sess.activity,openedAt:new Date().toISOString(),
+    bUsed:0,bLoad:0,dG:[],pkgDone:false});
+  selId=pid;chkd=new Set();
+  save();showApp();gT('reg');rWbs();rBill();rPbt();rDrk();rProds();
+  toast('➕ Nový hráč pridaný — pridaj mu produkty a uzavri účet');
 }
 // togGrp defined above
 // ══ MOJE AKCIE (inštruktor — iba vlastné, max 30 dní) ══
