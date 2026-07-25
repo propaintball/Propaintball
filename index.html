@@ -557,8 +557,10 @@ textarea{resize:none;line-height:1.5;}
         <div class="ch" style="color:var(--t2);margin-bottom:10px;">📅 Časový filter</div>
         <div class="cf" style="margin-bottom:10px;">
           <span class="cc on" id="sf-day" onclick="setSF('day',this)">Dnes</span>
+          <span class="cc" onclick="setSF('yesterday',this)">Včera</span>
           <span class="cc" onclick="setSF('week',this)">Týždeň</span>
           <span class="cc" onclick="setSF('month',this)">Mesiac</span>
+          <span class="cc" onclick="setSF('prevmonth',this)">Predošlý mesiac</span>
           <span class="cc" onclick="setSF('all',this)">Všetko</span>
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
@@ -610,7 +612,10 @@ textarea{resize:none;line-height:1.5;}
       <div class="card">
         <div class="ch">📈 Analýzy — obdobie</div>
         <div class="cf">
+          <span class="cc" onclick="setAF('day',this)">Dnes</span>
+          <span class="cc" onclick="setAF('yesterday',this)">Včera</span>
           <span class="cc on" onclick="setAF('month',this)">Tento mesiac</span>
+          <span class="cc" onclick="setAF('prevmonth',this)">Predošlý mesiac</span>
           <span class="cc" onclick="setAF('3m',this)">3 mesiace</span>
           <span class="cc" onclick="setAF('year',this)">Rok</span>
           <span class="cc" onclick="setAF('all',this)">Všetko</span>
@@ -1139,7 +1144,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.24c';
+const APP_VERSION='2026.07.24e';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -5092,6 +5097,11 @@ function setSF(mode,el){
   const lm=(d)=>new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,0,0,0);
   if(mode==='day'){
     sFFrom=lm(now);sFTo=new Date(sFFrom.getTime()+86400000);
+  }else if(mode==='yesterday'){
+    sFTo=lm(now);sFFrom=new Date(sFTo.getTime()-86400000);
+  }else if(mode==='prevmonth'){
+    sFFrom=new Date(now.getFullYear(),now.getMonth()-1,1,0,0,0,0);
+    sFTo=new Date(now.getFullYear(),now.getMonth(),1,0,0,0,0);
   }else if(mode==='week'){
     const dow=now.getDay()||7;
     const mon=new Date(now.getFullYear(),now.getMonth(),now.getDate()-dow+1);
@@ -5261,8 +5271,8 @@ function rSpravca(){
     const shot=grp.reduce((t,w)=>t+Math.min(w.bUsed||0,totBalls(w)),0);
     const dStats=buildDrinkStats(grp);const drinkCount=Object.values(dStats).reduce((s,v)=>s+v,0);
     // Deposit per game
-    let grpDepAmt=0;
-    try{const gd=sDeps[key];if(gd)grpDepAmt=gd.amount;else{if(sess&&sess.deposit)grpDepAmt=sess.deposit.amount;}}catch(e){}
+    let grpDepAmt=0;let depWbId=null;let depPopupAmt=0;
+    try{const gd=sDeps[key];if(gd){grpDepAmt=gd.amount;depWbId=gd.wbId;depPopupAmt=gd.amount;}else if(sess&&sess.deposit){grpDepAmt=sess.deposit.amount;depWbId=sess.deposit.wbId;depPopupAmt=sess.deposit.amount;}}catch(e){}
     grpDepAmt+=grp.reduce((s,w)=>s+depositItemAmt(w),0);
     // Invoice color: unpaid=amber border, paid=purple, no invoice=normal
     const rowBorder=grpInv>0?(sessInvPaid?'var(--pbd)':'var(--abd)'):'var(--b1)';
@@ -5327,9 +5337,13 @@ function rSpravca(){
             ${grp.map(w=>{const pkg=getPkg(w);const balls=pkg?`${Math.min(w.bUsed||0,totBalls(w))}/${totBalls(w)}`:'';
             const isInv=w.payM==='invoice'||wInvoiceAmt(w)>0;
             const invConf=lSessInvConf();const sKey=w.sKey||'unknown';const isPaid=!!(invConf[sKey]?.paid);const paidDate=invConf[sKey]?.date||'';
-            return`<div class="player-card" style="border-color:${w.payM==='card'?'var(--bbd)':isInv?(isPaid?'var(--pbd)':'var(--abd)'):'var(--gbd)'};">
+            // ✅ Záloha priradená tomuto hráčovi (popup) alebo produkt Záloha na jeho účte
+            const _wDepProd=depositItemAmt(w);
+            const _wDep=(depWbId===w.id?depPopupAmt:0)+_wDepProd;
+            return`<div class="player-card" style="border-color:${_wDep>0?'var(--gbd)':w.payM==='card'?'var(--bbd)':isInv?(isPaid?'var(--pbd)':'var(--abd)'):'var(--gbd)'};${_wDep>0?'box-shadow:inset 3px 0 0 var(--grn);':''}">
               <div class="player-name">${escHtml(w.name)}</div>
               ${(w.email||w.phone)?`<div style="font-size:9px;color:var(--t3);">${escHtml(w.email||w.phone)}</div>`:''}
+              ${_wDep>0?`<div style="margin-top:3px;"><span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:99px;background:var(--gbg);color:var(--grn);border:.5px solid var(--gbd);">💰 Záloha ${fp(_wDep)}</span></div>`:''}
               <div class="player-meta" style="margin-top:3px;">
                 ${w.payM==='card'?'<span style="color:var(--blu);">💳</span>':isInv?`<span style="color:${isPaid?'var(--pur)':'var(--amb)'};">🧾</span>`:'<span style="color:var(--grn);">💵</span>'} <strong>${fp(totalAmt(w))}</strong>
                 ${balls?`<span style="color:var(--t3);"> · 🔴${balls}</span>`:''}
@@ -5437,7 +5451,11 @@ let aPieInst=null,aMonthInst=null,aDrinksInst=null;
 function setAF(mode,el){
   document.querySelectorAll('#p-analyzy .cc').forEach(c=>c.classList.remove('on'));if(el)el.classList.add('on');
   const now=new Date();
-  if(mode==='month'){aFrom=new Date(now.getFullYear(),now.getMonth(),1);aTo=new Date(now.getFullYear(),now.getMonth()+1,1);}
+  const _d0=new Date(now.getFullYear(),now.getMonth(),now.getDate(),0,0,0,0);
+  if(mode==='day'){aFrom=_d0;aTo=new Date(_d0.getTime()+86400000);}
+  else if(mode==='yesterday'){aTo=_d0;aFrom=new Date(_d0.getTime()-86400000);}
+  else if(mode==='prevmonth'){aFrom=new Date(now.getFullYear(),now.getMonth()-1,1);aTo=new Date(now.getFullYear(),now.getMonth(),1);}
+  else if(mode==='month'){aFrom=new Date(now.getFullYear(),now.getMonth(),1);aTo=new Date(now.getFullYear(),now.getMonth()+1,1);}
   else if(mode==='3m'){aFrom=new Date(now.getFullYear(),now.getMonth()-2,1);aTo=null;}
   else if(mode==='year'){aFrom=new Date(now.getFullYear(),0,1);aTo=null;}
   else if(mode==='all'){aFrom=null;aTo=null;}
