@@ -614,8 +614,8 @@ textarea{resize:none;line-height:1.5;}
         <div class="cf">
           <span class="cc" onclick="setAF('day',this)">Dnes</span>
           <span class="cc" onclick="setAF('yesterday',this)">Včera</span>
-          <span class="cc on" onclick="setAF('month',this)">Tento mesiac</span>
-          <span class="cc" onclick="setAF('prevmonth',this)">Predošlý mesiac</span>
+          <span class="cc" onclick="setAF('month',this)">Tento mesiac</span>
+          <span class="cc on" onclick="setAF('prevmonth',this)">Predošlý mesiac</span>
           <span class="cc" onclick="setAF('3m',this)">3 mesiace</span>
           <span class="cc" onclick="setAF('year',this)">Rok</span>
           <span class="cc" onclick="setAF('all',this)">Všetko</span>
@@ -1144,7 +1144,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.24e';
+const APP_VERSION='2026.07.25';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -2488,10 +2488,11 @@ function gT(n){
   if(n==='open')rOpen();
   if(n==='spravca'){setSF('day',$('#sf-day')||document.querySelector('#p-spravca .cc'));rSpravca();}
   if(n==='analyzy'){
-    // Mark first .cc as active if none is
-    const firstCC=document.querySelector('#p-analyzy .cc');
-    if(firstCC&&!document.querySelector('#p-analyzy .cc.on'))firstCC.classList.add('on');
-    rAnalyzy();
+    // ✅ Zvýraznené tlačidlo VŽDY riadi načítané dáta (predtým sa rozchádzali)
+    let onBtn=document.querySelector('#p-analyzy .cc.on')
+      ||[...document.querySelectorAll('#p-analyzy .cc')].find(c=>/setAF\('prevmonth'/.test(c.getAttribute('onclick')||''));
+    const m=onBtn&&(onBtn.getAttribute('onclick')||'').match(/setAF\('(\w+)'/);
+    if(m)setAF(m[1],onBtn);else rAnalyzy();
   }
   if(n==='moje')rMoje();
   if(n==='sett'){
@@ -4919,7 +4920,11 @@ function confirmDelSess(){
   delete notes[key];sNotes(notes);
   delete de[key];sDE(de);
   const deps=lDeposits();delete deps[key];sDeposits(deps);
-  cm('m-del-sess');save();rClosed();rAkcie();rAppSessBar();
+  cm('m-del-sess');save();rClosed();rAkcie();rAppSessBar();updInvBadge();
+  // ✅ FIX: refreshni aj Správcu/Analýzy — inak akcia zostala na obrazovke a musela sa mazať 2×
+  if($('p-spravca')?.classList.contains('on'))rSpravca();
+  if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
+  if($('p-moje')?.classList.contains('on'))rMoje();
   toast('Akcia archivovaná a vymazaná');delSessKey=null;
 }
 // ══ AKCIE ══
@@ -5349,7 +5354,7 @@ function rSpravca(){
                 ${balls?`<span style="color:var(--t3);"> · 🔴${balls}</span>`:''}
                 ${(w.dG||[]).length?`<span style="color:var(--t3);"> · 🥤${w.dG.length}</span>`:''}
               </div>
-              ${isInv&&admUnlocked?`<div style="margin-top:5px;display:flex;align-items:center;gap:4px;">
+              ${isInv&&(admUnlocked||isAdmin())?`<div style="margin-top:5px;display:flex;align-items:center;gap:4px;">
                 <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;color:${isPaid?'var(--pur)':'var(--amb)'};">
                   <input type="checkbox" ${isPaid?'checked':''} onchange="markSessInvoicePaid('${sKey}',this.checked)" style="accent-color:var(--pur);width:13px;height:13px;">
                   ${isPaid?`Uhradená ${paidDate}`:'Neuhradená'}
@@ -5357,9 +5362,9 @@ function rSpravca(){
               </div>`:isInv?`<div style="margin-top:3px;font-size:9px;color:${isPaid?'var(--pur)':'var(--amb);font-style:italic'};">${isPaid?'✅ Uhradená '+paidDate:'⏳ Čaká na úhradu'}</div>`:''}
               <div style="display:flex;gap:3px;margin-top:5px;flex-wrap:wrap;">
                 <button class="btn xs B" onclick="openEPayM('${w.id}')" title="Zmeniť platbu">✎ Platba</button>
-                ${admUnlocked?`<button class="btn xs T" onclick="openEditAmt('${w.id}')" title="Upraviť sumu">✎ Suma</button>`:''}
+                ${(admUnlocked||isAdmin())?`<button class="btn xs T" onclick="openEditAmt('${w.id}')" title="Upraviť sumu">✎ Suma</button>`:''}
                 <button class="btn xs A" onclick="openReopen('${w.id}')" title="Znovu otvoriť účet">↩</button>
-                ${admUnlocked?`<button class="btn xs R" onclick="adminDeleteBill('${w.id}')" title="Zmazať účet (duplikát/chyba)">🗑</button>`:''}
+                ${(admUnlocked||isAdmin())?`<button class="btn xs R" onclick="adminDeleteBill('${w.id}')" title="Odobrať hráča / zmazať účet">🗑</button>`:''}
               </div>
             </div>`;}).join('')}
           </div>
@@ -8262,10 +8267,10 @@ function buildTimeStr(ded, sess, grpBills){
   // Initialize Spravca filter to today
   sFFrom=new Date(new Date().setHours(0,0,0,0));
   sFTo=new Date(new Date().setHours(23,59,59,999));
-  // Initialize Analyzy filter to this month
+  // Initialize Analyzy filter to PREVIOUS month (default) — zhoduje sa s ozn. tlačidlom
   const _now=new Date();
-  aFrom=new Date(_now.getFullYear(),_now.getMonth(),1);
-  aTo=null;
+  aFrom=new Date(_now.getFullYear(),_now.getMonth()-1,1);
+  aTo=new Date(_now.getFullYear(),_now.getMonth(),1);
 
   // ✅ Self-heal pri štarte: odober uzavreté akcie (s odmenou) zo sessArr,
   //    keby tam zostali z predošlého pokazeného stavu (uzavretá akcia stále otvorená).
