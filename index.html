@@ -1147,7 +1147,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.25d';
+const APP_VERSION='2026.07.25e';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1273,6 +1273,8 @@ function reopenWholeSession(key){
           startedAt:new Date().toISOString(),calRunNumber:fw.sCalRunNumber||null};
     sessArr.push(sess);
   }
+  // ✅ Zachovaj poznámku inštruktora aj po oživení (zrkadlo z lNotes do sess objektu).
+  {const _nn=lNotes()[key];if(_nn){sess.note=_nn;}}
   // odmena sa prepočíta pri opätovnom uzavretí
   const pouts=lPouts();if(pouts[key]){delete pouts[key];sPouts(pouts);}
   if(!wbMap[key])wbMap[key]=[];
@@ -1873,16 +1875,23 @@ function _mergeSessFromCloud(d){
     }
     dedupeWbs(key); // ✅ poistka proti duplicitným ID (rovnaké ID z dvoch zariadení)
   } else if(d.status==='closed'){
-    // ✅ Session was closed on another device — remove it from local sessArr if still present
-    const existIdx=sessArr.findIndex(s=>s.key===key);
-    if(existIdx>=0){
-      sessArr.splice(existIdx,1);
-      delete wbMap[key];
-      if(curSid===key){
-        curSid=sessArr.length?sessArr[sessArr.length-1].key:null;
-        selId=null;chkd=new Set();
+    // ✅ Session was closed on another device — remove it from local sessArr if still present.
+    //    ALE: ak máme lokálne OTVORENÝCH hráčov (dodatočne pridaný cez '+' / oživenie, ktoré
+    //    cloud ešte nemá), NEMAŽ ich — inak by sme prišli o rozrobený účet. Session ostane
+    //    aktívna, kým sa lokálny hráč neuzavrie.
+    if(_hasOpenLocal){
+      console.log('[mergeSessFromCloud] Session',key,'je "closed" na cloude, ale má lokálne otvorených hráčov — ponechaná');
+    }else{
+      const existIdx=sessArr.findIndex(s=>s.key===key);
+      if(existIdx>=0){
+        sessArr.splice(existIdx,1);
+        delete wbMap[key];
+        if(curSid===key){
+          curSid=sessArr.length?sessArr[sessArr.length-1].key:null;
+          selId=null;chkd=new Set();
+        }
+        console.log('[mergeSessFromCloud] Session',key,'uzavretá na inom zariadení — odobraná lokálne');
       }
-      console.log('[mergeSessFromCloud] Session',key,'uzavretá na inom zariadení — odobraná lokálne');
     }
   }
   // Merge closed bills — deduplicate by id (never lose a closed account)
@@ -3904,6 +3913,28 @@ function getDepositForSession(sessKey){
   return 0;
 }
 // ══ CLOSE BILL ══
+// ✅ Uzavri dodatočne pridaného agentúrneho hráča (len balík) priamo na faktúru.
+//    Akcia už bola uzavretá (má výplatu) → hráč pribudne do uzavretých účtov, session
+//    sa čisto dofinalizuje bez opätovného modalu výplaty.
+function _finalizeAddedAgencyPlayer(wbId){
+  const sk=actKey();const sess=sessArr.find(s=>s.key===sk);
+  const wbs=wbMap[sk]||[];const w=wbs.find(x=>x.id===wbId);if(!w)return;
+  const now=new Date().toISOString();
+  w.closedAt=now;w.orderIdx=closed.filter(x=>x.sKey===sk).length;w.payM='invoice';
+  w.sKey=sk;w.sArena=sess?.arena;w.sInstr=sess?.instructor;w.sAct=sess?.activity;w.sDate=sess?.date;w.sTime=sess?.time;if(sess?.calRunNumber)w.sCalRunNumber=sess.calRunNumber;
+  closed.unshift(w);
+  wbMap[sk]=wbs.filter(x=>x.id!==wbId);
+  if(selId===wbId)selId=null;chkd.delete(wbId);
+  auditLog('bill-close',w.name+' invoice '+fp(billAmt(w)));
+  save();rWbs();rBill();rPbt();rDrk();rAppSessBar();updSessBadge();updInvBadge();
+  if($('p-spravca')?.classList.contains('on'))rSpravca();
+  if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
+  toast(currentLang==='en'?'🧾 Package invoiced — player added to game':'🧾 Balík na faktúru — hráč pridaný do akcie');
+  // Ak to bol posledný otvorený hráč, dofinalizuj session (má výplatu → čisto sa odoberie z lišty).
+  if((wbMap[sk]||[]).length===0)checkLastPlayerClosed(sk);
+  // Push aktuálny stav (po prípadnom odobraní session → status 'closed').
+  if(sbUrl&&sbKey)sbPushSession(sk).catch(()=>{});
+}
 function closeBill(){
   const wbs=getWbs();const w=wbs.find(w=>w.id===selId);
   if(w&&!canEditWb(selId)){toast('Nemáš oprávnenie uzavrieť tento účet');return;}
@@ -3914,8 +3945,17 @@ function closeBill(){
       // Has extras — must pay them first (card/cash)
       openAgencyPay(selId);
     }else{
-      // Only package remains — will be closed on invoice when session closes
-      toast('🏢 Agentúra: balík sa uzavrie na faktúru pri Uzavrieť akciu');
+      // Only package remains.
+      const sk=actKey();const sess=sessArr.find(s=>s.key===sk);
+      // ✅ Dodatočne pridaný hráč do UŽ uzavretej akcie (cez '+') — akcia už má výplatu.
+      //    Neposielaj ho cez „Uzavrieť akciu" (to by prepísalo výplatu); uzavri ho hneď
+      //    na faktúru a session sa čisto dofinalizuje (checkLastPlayerClosed).
+      if(sess&&(sess._addOnly||lPouts()[sk])){
+        _finalizeAddedAgencyPlayer(selId);
+      }else{
+        // Bežná agentúrna akcia — balík sa uzavrie na faktúru pri Uzavrieť akciu
+        toast('🏢 Agentúra: balík sa uzavrie na faktúru pri Uzavrieť akciu');
+      }
     }
     return;
   }
@@ -5047,7 +5087,13 @@ function savePout(){
 }
 // ══ NOTE ══
 function openNote(key){noteKey=key;const notes=lNotes();$('note-t').value=notes[key]||'';om('m-note');}
-function saveNote(){const notes=lNotes();notes[noteKey]=$('note-t').value.trim();sNotes(notes);const s=sessArr.find(x=>x.key===noteKey);if(s){s.note=notes[noteKey];save();}else save();cm('m-note');toast(t('toast-note-saved'));if($('p-akcie').classList.contains('on'))rAkcie();}
+function saveNote(){const notes=lNotes();notes[noteKey]=$('note-t').value.trim();sNotes(notes);const s=sessArr.find(x=>x.key===noteKey);if(s){s.note=notes[noteKey];}save();cm('m-note');toast(t('toast-note-saved'));
+  if($('p-akcie')?.classList.contains('on'))rAkcie();
+  if($('p-spravca')?.classList.contains('on'))rSpravca();
+  if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
+  if($('p-moje')?.classList.contains('on'))rMoje();
+  // Sync poznámky do cloudu (session row ak je aktívna, inak plný push zachytí lNotes).
+  if(sbUrl&&sbKey){if(s)sbPushSession(noteKey).catch(()=>{});else sbPush();}}
 // ══ CHART ══
 function showChart(){
   const now=new Date();const cm2=now.getMonth(),cy=now.getFullYear();
@@ -5325,7 +5371,9 @@ function rSpravca(){
           </div>
           <div style="font-size:11px;color:var(--t2);">👤 ${escHtml(fw.sInstr||'—')} &nbsp;·&nbsp; 📅 ${startStr}</div>
           <div style="font-size:10px;color:var(--t3);margin-top:1px;">🏁 ${endStr}</div>
-          ${note?`<div style="font-size:10px;color:var(--amb);margin-top:3px;background:var(--abg);border:.5px solid var(--abd);border-radius:6px;padding:3px 7px;display:inline-block;max-width:100%;">📝 ${escHtml(note)}</div>`:''}
+          ${note
+            ?`<div onclick="event.stopPropagation();openNote('${key}')" title="Kliknutím upravíš poznámku inštruktora" style="cursor:pointer;font-size:11px;line-height:1.35;color:var(--amb);font-weight:600;margin-top:6px;background:var(--abg);border:.5px solid var(--abd);border-left:3px solid var(--amb);border-radius:7px;padding:6px 10px;max-width:100%;white-space:pre-wrap;word-break:break-word;">📝 ${escHtml(note)} <span style="opacity:.55;font-weight:400;font-size:10px;">&nbsp;✎ upraviť</span></div>`
+            :`<div onclick="event.stopPropagation();openNote('${key}')" title="Pridať poznámku inštruktora" style="cursor:pointer;font-size:10px;color:var(--t3);margin-top:6px;border:.5px dashed var(--b2);border-radius:7px;padding:5px 10px;display:inline-block;">📝 Pridať poznámku inštruktora…</div>`}
         </div>
         <!-- Stats pills -->
         <div style="display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px;padding:8px 10px;flex-shrink:0;">
@@ -5419,6 +5467,8 @@ function addPlayerToClosedSession(key){
           startedAt:new Date().toISOString(),calRunNumber:fw.sCalRunNumber||null,_addOnly:true};
     sessArr.push(sess);
   }
+  // ✅ Zachovaj poznámku inštruktora aj pri dodatočnom pridaní hráča.
+  {const _nn=lNotes()[key];if(_nn){sess.note=_nn;}}
   if(!wbMap[key])wbMap[key]=[];
   curSid=key;
   // ďalšie voľné číslo (z otvorených aj uzavretých účtov session)
@@ -5429,6 +5479,9 @@ function addPlayerToClosedSession(key){
     bUsed:0,bLoad:0,dG:[],pkgDone:false});
   selId=pid;chkd=new Set();
   save();showApp();gT('reg');rWbs();rBill();rPbt();rDrk();rProds();
+  // ✅ Okamžite pushni reaktivovanú session ako 'active' — inak cloud ostane 'closed'
+  //    a nasledujúci merge/poll by mohol zmazať práve pridaného otvoreného hráča.
+  if(sbUrl&&sbKey)sbPushSession(key).catch(()=>{});
   toast('➕ Nový hráč pridaný — pridaj mu produkty a uzavri účet');
 }
 // togGrp defined above
