@@ -1147,7 +1147,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.25f';
+const APP_VERSION='2026.07.25g';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -6344,7 +6344,15 @@ function cm(id){
   // Restore session bar when no modal is open
   if(!anyOpen){const bar=$('multi-sess-bar');if(bar)bar.style.opacity='1';}
 }
-['m-pay','m-epay','m-grp','m-adm','m-item','m-wb','m-sess','m-vrp','m-reopen','m-drink','m-xh','m-pout','m-note','m-chart','m-edates','m-report','m-del-sess','m-backup','m-restore-confirm','m-agency-pay'].forEach(id=>{const el=$(id);if(el)el.addEventListener('click',function(e){if(e.target===this){cm(id);if(id==='m-close-sess')closeSessKey=null;if(id==='m-del-sess')delSessKey=null;}});});
+['m-pay','m-epay','m-grp','m-adm','m-item','m-wb','m-sess','m-vrp','m-reopen','m-drink','m-xh','m-pout','m-note','m-chart','m-edates','m-report','m-del-sess','m-backup','m-restore-confirm','m-agency-pay'].forEach(id=>{const el=$(id);if(!el)return;
+  // ✅ Zatvor len pri SKUTOČNOM kliknutí na backdrop — mousedown AJ mouseup musia byť na backdrope.
+  //    Inak označovanie textu v textarea (ťah myšou končiaci na pozadí) modal nechtiac zavrelo.
+  let _downOnBackdrop=false;
+  el.addEventListener('mousedown',function(e){_downOnBackdrop=(e.target===this);});
+  el.addEventListener('click',function(e){
+    const ok=_downOnBackdrop&&e.target===this;_downOnBackdrop=false;
+    if(ok){cm(id);if(id==='m-close-sess')closeSessKey=null;if(id==='m-del-sess')delSessKey=null;}
+  });});
 // ══ SOUND EFFECTS ══
 let _audioCtx=null;
 function getAudioCtx(){if(!_audioCtx)_audioCtx=new(window.AudioContext||window.webkitAudioContext)();return _audioCtx;}
