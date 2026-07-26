@@ -1147,7 +1147,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.25e';
+const APP_VERSION='2026.07.25f';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -5083,7 +5083,11 @@ function savePout(){
   const amt=parseFloat($('po-amt').value)||0;const costs=parseFloat($('po-costs').value)||0;const note=$('po-note').value.trim();const type=$('po-type').value;const hrs=parseFloat($('po-hrs').value)||0;
   if(costs>0&&!note){toast(t('toast-cost-note-required'));return;}
   const pouts=lPouts();pouts[poutKey]={amt,costs,note,type,hrs};sPouts(pouts);
-  cm('m-pout');save();toast('Výplata uložená: '+fp(amt));rAkcie();if($('p-closed').classList.contains('on'))rClosed();
+  cm('m-pout');save();toast('Výplata uložená: '+fp(amt));rAkcie();if($('p-closed')?.classList.contains('on'))rClosed();
+  if($('p-spravca')?.classList.contains('on'))rSpravca();
+  if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
+  if($('p-moje')?.classList.contains('on'))rMoje();
+  if(sbUrl&&sbKey)sbPush();
 }
 // ══ NOTE ══
 function openNote(key){noteKey=key;const notes=lNotes();$('note-t').value=notes[key]||'';om('m-note');}
@@ -5346,6 +5350,10 @@ function rSpravca(){
     const ded=de[key];const sess=sessArr.find(s=>s.key===key);
     const {startStr,endStr}=buildTimeStr(ded,sess,grp);
     const pout=pouts[key];const note=notes[key]||'';
+    // Poznámka k akcii: priorita = poznámka zadaná pri UZATVÁRANÍ akcie (pout.note),
+    // fallback = samostatná 📝 poznámka inštruktora (lNotes).
+    const closeNote=(pout&&pout.note)?pout.note:'';
+    const headNote=closeNote||note;
     const shot=grp.reduce((t,w)=>t+Math.min(w.bUsed||0,totBalls(w)),0);
     const dStats=buildDrinkStats(grp);const drinkCount=Object.values(dStats).reduce((s,v)=>s+v,0);
     // Deposit per game
@@ -5371,9 +5379,9 @@ function rSpravca(){
           </div>
           <div style="font-size:11px;color:var(--t2);">👤 ${escHtml(fw.sInstr||'—')} &nbsp;·&nbsp; 📅 ${startStr}</div>
           <div style="font-size:10px;color:var(--t3);margin-top:1px;">🏁 ${endStr}</div>
-          ${note
-            ?`<div onclick="event.stopPropagation();openNote('${key}')" title="Kliknutím upravíš poznámku inštruktora" style="cursor:pointer;font-size:11px;line-height:1.35;color:var(--amb);font-weight:600;margin-top:6px;background:var(--abg);border:.5px solid var(--abd);border-left:3px solid var(--amb);border-radius:7px;padding:6px 10px;max-width:100%;white-space:pre-wrap;word-break:break-word;">📝 ${escHtml(note)} <span style="opacity:.55;font-weight:400;font-size:10px;">&nbsp;✎ upraviť</span></div>`
-            :`<div onclick="event.stopPropagation();openNote('${key}')" title="Pridať poznámku inštruktora" style="cursor:pointer;font-size:10px;color:var(--t3);margin-top:6px;border:.5px dashed var(--b2);border-radius:7px;padding:5px 10px;display:inline-block;">📝 Pridať poznámku inštruktora…</div>`}
+          ${headNote
+            ?`<div onclick="event.stopPropagation();${closeNote?`openPout('${key}',${grpTot})`:`openNote('${key}')`}" title="Kliknutím upravíš poznámku k akcii" style="cursor:pointer;font-size:11px;line-height:1.35;color:var(--amb);font-weight:600;margin-top:6px;background:var(--abg);border:.5px solid var(--abd);border-left:3px solid var(--amb);border-radius:7px;padding:6px 10px;max-width:100%;white-space:pre-wrap;word-break:break-word;">📝 ${escHtml(headNote)} <span style="opacity:.55;font-weight:400;font-size:10px;">&nbsp;✎ upraviť</span></div>`
+            :`<div onclick="event.stopPropagation();${pout?`openPout('${key}',${grpTot})`:`openNote('${key}')`}" title="Pridať poznámku k akcii" style="cursor:pointer;font-size:10px;color:var(--t3);margin-top:6px;border:.5px dashed var(--b2);border-radius:7px;padding:5px 10px;display:inline-block;">📝 Pridať poznámku…</div>`}
         </div>
         <!-- Stats pills -->
         <div style="display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px;padding:8px 10px;flex-shrink:0;">
@@ -5401,7 +5409,7 @@ function rSpravca(){
       </div>
       <!-- EXPANDED BODY -->
       <div class="game-body" id="gg-${gi}" style="background:var(--bg2);">
-        ${note?`<div style="font-size:11px;color:var(--t2);padding:8px 12px;border-bottom:.5px solid var(--b1);display:flex;align-items:center;gap:6px;">📝 <span>${escHtml(note)}</span></div>`:''}
+        ${headNote?`<div style="font-size:11px;color:var(--t2);padding:8px 12px;border-bottom:.5px solid var(--b1);display:flex;align-items:center;gap:6px;">📝 <span>${escHtml(headNote)}</span></div>`:''}
         <!-- Stats row -->
         <div style="display:flex;gap:8px;padding:8px 12px;flex-wrap:wrap;border-bottom:.5px solid var(--b1);">
           ${shot>0?`<div style="text-align:center;background:var(--rbg);border:.5px solid var(--rbd);border-radius:var(--rs);padding:5px 10px;"><div style="font-size:14px;font-weight:700;color:var(--red);">${shot}</div><div style="font-size:9px;color:var(--t3);">guličiek</div></div>`:''}
