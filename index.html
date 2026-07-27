@@ -1147,7 +1147,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.25g';
+const APP_VERSION='2026.07.27a';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1429,6 +1429,33 @@ function fDT(iso){const d=fD(iso),t=fT(iso);return d?(d+(t?' '+t:'')):'—';}
 function lNotes(){try{return JSON.parse(localStorage.getItem('pb_notes')||'{}');}catch(e){console.warn('[Storage] Parse failed for pb_notes:',e);return {};}}
 function sNotes(n){localStorage.setItem('pb_notes',JSON.stringify(n));}
 
+// ══ TOMBSTONES — vymazané akcie (multi-device delete) ══
+// Bez tombstone by cloud riadok / iné zariadenie vymazanú akciu vždy vrátil späť.
+// Kľúč akcie → ISO čas vymazania. Synchronizuje sa cez pb_settings.
+function lTombstones(){try{return JSON.parse(localStorage.getItem('pb_tomb')||'{}');}catch(e){return {};}}
+function sTombstones(d){try{localStorage.setItem('pb_tomb',JSON.stringify(d));}catch(e){}}
+function isTombstoned(key){return !!lTombstones()[key];}
+// Aplikuj sadu tombstones — lokálne odstráni akcie (sessArr/wbMap/closed/pouts/notes/de/deposits).
+// Vracia true ak sa niečo zmenilo. Union merge (nikdy neuberá cudzie tombstones).
+function applyTombstones(incoming){
+  if(!incoming)return false;
+  const tomb=lTombstones();let changed=false,dataChanged=false;
+  Object.entries(incoming).forEach(([k,v])=>{if(!tomb[k]){tomb[k]=v;changed=true;}});
+  if(changed)sTombstones(tomb);
+  // Odstráň lokálne dáta pre všetky tombstoned akcie
+  Object.keys(tomb).forEach(k=>{
+    if(sessArr.some(s=>s.key===k)){sessArr=sessArr.filter(s=>s.key!==k);dataChanged=true;}
+    if(wbMap[k]){delete wbMap[k];dataChanged=true;}
+    if(closed.some(w=>(w.sKey||'unknown')===k)){closed=closed.filter(w=>(w.sKey||'unknown')!==k);dataChanged=true;}
+    const p=lPouts();if(p[k]){delete p[k];sPouts(p);dataChanged=true;}
+    const n=lNotes();if(n[k]){delete n[k];sNotes(n);}
+    const de=lDE();if(de[k]){delete de[k];sDE(de);}
+    const dep=lDeposits();if(dep[k]){delete dep[k];sDeposits(dep);}
+    if(curSid===k){curSid=sessArr.length?sessArr[sessArr.length-1].key:null;selId=null;chkd=new Set();}
+  });
+  return changed||dataChanged;
+}
+
 
 // Session-level invoice confirmation (one per game, not per player)
 function lSessInvConf(){try{return JSON.parse(localStorage.getItem('pb_sess_inv')||'{}');}catch(e){console.warn('[Storage] Parse failed for pb_sess_inv:',e);return{};}}
@@ -1682,6 +1709,8 @@ function plApply(d){
     d.customers.forEach(c=>{if(c.email)merged.set(c.email.toLowerCase(),{...merged.get(c.email.toLowerCase())||{},...c});});
     sCustomers([...merged.values()]);
   }
+  // ✅ Nikdy nevzkriesiť vymazané akcie z legacy snapshotu
+  applyTombstones(lTombstones());
   saveAll();
 }
 function sbSave(){
@@ -1703,6 +1732,7 @@ function sbSave(){
 // Push one session as its own row — no conflict between devices
 async function sbPushSession(sessKey, sessOverride){
   if(!sbUrl||!sbKey||!sessKey)return;
+  if(isTombstoned(sessKey))return; // ✅ nepushuj vymazanú akciu späť do cloudu
   let sess=sessOverride||(sessArr.find(s=>s.key===sessKey));
   // Pre historické uzavreté sessie bez metadát — zostav minimálny sess objekt z bills
   if(!sess){
@@ -1744,6 +1774,8 @@ async function sbPushSettings(){
     calId:LS.g('pb_cal_id',''),
     // ✅ Úhrady faktúr — sync medzi zariadeniami (inak by iPad videl faktúru stále neuhradenú)
     sessInv:lSessInvConf(),
+    // ✅ Tombstones vymazaných akcií — aby sa vymazanie prenieslo na všetky zariadenia
+    tombstones:lTombstones(),
     ts:Date.now()
   };
   try{
@@ -1828,6 +1860,8 @@ function _applySettings(d){
     Object.entries(d.sessInv).forEach(([k,v])=>{if(!cur[k]&&v&&v.paid){cur[k]=v;ch=true;}});
     if(ch)sSessInvConf(cur);
   }
+  // ✅ Tombstones z cloudu — vymaž lokálne akcie, ktoré boli zmazané na inom zariadení
+  if(d.tombstones)applyTombstones(d.tombstones);
   // Google Calendar credentials — sync naprieč zariadeniami (Mac → iPad)
   if(d.calSaCreds){LS.s('pb_cal_sa_creds',d.calSaCreds);}
   if(d.calId){LS.s('pb_cal_id',d.calId);}
@@ -1839,68 +1873,71 @@ function _applySettings(d){
   }
 }
 
-// Merge one session row from cloud into local state (no overwrites, only adds missing)
+// Merge one session row from cloud into local state.
+// Politika: uzavreté účty sa NIKDY nestratia (union podľa id). Otvorený stav rieši "closed-wins" —
+// ak je akcia na cloude uzavretá, zastarané lokálne otvorené kópie tých istých hráčov sa odstránia.
 function _mergeSessFromCloud(d){
   if(!d||!d.sess||!d.sess.key)return;
   const key=d.sess.key;
-  // ✅ KRITICKÉ: ak má session lokálne vyplnenú odmenu (pout), bola tu definitívne uzavretá.
-  //    Cloud 'active' (napr. z druhého zariadenia, ktoré ju ešte má otvorenú) ju NESMIE vzkriesiť.
+  // ✅ TOMBSTONE — akcia bola vymazaná; nepridávaj späť, len ju istotne odstráň lokálne.
+  if(isTombstoned(key)){applyTombstones(lTombstones());return;}
+
+  // Kompletná sada ID účtov, ktoré cloud eviduje ako UZAVRETÉ (na tejto aj iných akciách nezáleží —
+  // tu berieme len bills tejto akcie). Otvorený hráč s takýmto ID je zastaraná kópia.
+  const cloudClosedIds=new Set((d.bills||[]).map(b=>b.id));
   const localPout=lPouts()[key];
-  const _hasOpenLocal=wbMap[key]&&wbMap[key].length;
-  if(localPout&&!_hasOpenLocal){ // ✅ NEmaž ak má lokálne otvorených hráčov (dodatočne pridaný / oživenie)
-    // Session je uzavretá tu — odober ju zo sessArr ak sa medzitým objavila, a NEpridávaj späť.
-    const exIdx=sessArr.findIndex(s=>s.key===key);
-    if(exIdx>=0){
-      sessArr.splice(exIdx,1);delete wbMap[key];
-      if(curSid===key){curSid=sessArr.length?sessArr[sessArr.length-1].key:null;selId=null;chkd=new Set();}
-    }
-    // Stále zlúč uzavreté účty (neprísť o dáta), ale session sa už neotvorí.
-    const existBillIds0=new Set(closed.map(w=>w.id));
-    (d.bills||[]).forEach(b=>{if(!existBillIds0.has(b.id)){closed.push(b);existBillIds0.add(b.id);}});
-    return;
+
+  // Odstráň lokálne OTVORENÝCH hráčov, ktorí už boli UZAVRETÍ na cloude (rovnaké ID) — zastaraná kópia.
+  if(wbMap[key]&&wbMap[key].length&&cloudClosedIds.size){
+    wbMap[key]=wbMap[key].filter(w=>!cloudClosedIds.has(w.id));
   }
-  if(d.status==='active'){
-    const existIdx=sessArr.findIndex(s=>s.key===key);
-    if(existIdx<0){
-      // New session from another device — mark as _remote so sbPush never overwrites it
-      sessArr.push({...d.sess,_remote:true});
-      wbMap[key]=d.wbs||[];
-    } else {
-      // Merge players: add remote players not present locally
-      // Never replace existing player data — each device owns its own players
-      const localWbs=wbMap[key]||[];
-      const localIds=new Set(localWbs.map(w=>w.id));
-      (d.wbs||[]).forEach(rw=>{if(!localIds.has(rw.id)){localWbs.push(rw);localIds.add(rw.id);}});
-      wbMap[key]=localWbs;
-    }
-    dedupeWbs(key); // ✅ poistka proti duplicitným ID (rovnaké ID z dvoch zariadení)
-  } else if(d.status==='closed'){
-    // ✅ Session was closed on another device — remove it from local sessArr if still present.
-    //    ALE: ak máme lokálne OTVORENÝCH hráčov (dodatočne pridaný cez '+' / oživenie, ktoré
-    //    cloud ešte nemá), NEMAŽ ich — inak by sme prišli o rozrobený účet. Session ostane
-    //    aktívna, kým sa lokálny hráč neuzavrie.
-    if(_hasOpenLocal){
-      console.log('[mergeSessFromCloud] Session',key,'je "closed" na cloude, ale má lokálne otvorených hráčov — ponechaná');
-    }else{
-      const existIdx=sessArr.findIndex(s=>s.key===key);
-      if(existIdx>=0){
-        sessArr.splice(existIdx,1);
-        delete wbMap[key];
-        if(curSid===key){
-          curSid=sessArr.length?sessArr[sessArr.length-1].key:null;
-          selId=null;chkd=new Set();
-        }
-        console.log('[mergeSessFromCloud] Session',key,'uzavretá na inom zariadení — odobraná lokálne');
+  // ── HEAL divergencie ──: uzavretá akcia S ODMENOU, ktorá NIE je dodatočné pridanie (_addOnly),
+  //    nesmie mať žiadnych otvorených hráčov. Ak nejaké ostali (zastaraná kópia s inými ID
+  //    z rozladenej synchronizácie), odstráň ich. Oživené akcie (reopenWholeSession) odmenu MAŽU,
+  //    takže localPout je pri nich falsy a heal ich nechá na pokoji.
+  const _sessLocal=sessArr.find(s=>s.key===key);
+  if(d.status==='closed'&&(localPout||d.pout)&&!(_sessLocal&&_sessLocal._addOnly)&&wbMap[key]&&wbMap[key].length){
+    delete wbMap[key];
+  }
+  // Genuinely-new otvorení hráči = lokálne otvorení, ktorých cloud NEeviduje ako uzavretých
+  // (napr. dodatočne pridaný cez '+' / oživenie, ktoré cloud ešte nemá). Tých chránime.
+  const hasFreshOpenLocal=!!(wbMap[key]&&wbMap[key].length);
+
+  if(d.status==='closed'||(localPout&&!hasFreshOpenLocal)){
+    // ── CLOSED-WINS ──: akcia je uzavretá (na cloude alebo lokálne) a nemáme žiadnych
+    //    naozaj nových otvorených hráčov → odober ju zo sessArr a NEotváraj.
+    if(!hasFreshOpenLocal){
+      const exIdx=sessArr.findIndex(s=>s.key===key);
+      if(exIdx>=0){
+        sessArr.splice(exIdx,1);delete wbMap[key];
+        if(curSid===key){curSid=sessArr.length?sessArr[sessArr.length-1].key:null;selId=null;chkd=new Set();}
       }
     }
+    // else: ponechaj akciu aktívnu LEN s naozaj novými otvorenými hráčmi (rozrobený účet).
+  } else if(d.status==='active'){
+    const existIdx=sessArr.findIndex(s=>s.key===key);
+    if(existIdx<0){
+      // Nová akcia z iného zariadenia — označ _remote, aby ju sbPush neprepísal stale dátami.
+      sessArr.push({...d.sess,_remote:true});
+      wbMap[key]=(d.wbs||[]).filter(w=>!cloudClosedIds.has(w.id));
+    } else {
+      // Obe zariadenia majú akciu otvorenú — pridaj vzdialených hráčov, ktorých lokálne nemáme.
+      const localWbs=wbMap[key]||[];
+      const localIds=new Set(localWbs.map(w=>w.id));
+      (d.wbs||[]).forEach(rw=>{if(!localIds.has(rw.id)&&!cloudClosedIds.has(rw.id)){localWbs.push(rw);localIds.add(rw.id);}});
+      wbMap[key]=localWbs;
+    }
+    dedupeWbs(key); // ✅ poistka proti duplicitným ID
   }
-  // Merge closed bills — deduplicate by id (never lose a closed account)
+  // Merge uzavretých účtov — union podľa id (nikdy nestratíme uzavretý účet).
   const existBillIds=new Set(closed.map(w=>w.id));
   (d.bills||[]).forEach(b=>{if(!existBillIds.has(b.id)){closed.push(b);existBillIds.add(b.id);}});
-  // Merge deposit (first one wins)
+  // Merge zálohy (prvá vyhráva)
   if(d.deposit){const deps=lDeposits();if(!deps[key]){deps[key]=d.deposit;sDeposits(deps);}}
-  // Merge pout (first one wins)
+  // Merge odmeny (prvá vyhráva)
   if(d.pout){const pouts=lPouts();if(!pouts[key]){pouts[key]=d.pout;sPouts(pouts);}}
+  // Merge poznámky inštruktora (prvá vyhráva) — aby sa poznámka preniesla medzi zariadeniami.
+  if(d.sess&&d.sess.note){const nn=lNotes();if(!nn[key]){nn[key]=d.sess.note;sNotes(nn);}}
 }
 
 // ✅ Self-heal: odober zo sessArr každú session, ktorá už má vyplnenú odmenu (= uzavretá).
@@ -1956,6 +1993,7 @@ async function sbPull(){
           const existBillIds=new Set(closed.map(w=>w.id));
           let legacyAdded=0;
           mainRows[0].payload.closed.forEach(b=>{
+            if(isTombstoned(b.sKey||'unknown'))return; // ✅ nevracaj účty vymazanej akcie
             if(!existBillIds.has(b.id)){closed.push(b);existBillIds.add(b.id);legacyAdded++;}
           });
           if(legacyAdded>0)console.log('[sbPull] Legacy main: merged '+legacyAdded+' chýbajúcich uzavretých účtov');
@@ -1991,22 +2029,33 @@ async function sbPollSessions(){
   if(!sbUrl||!sbKey||_bgPollLock)return;
   _bgPollLock=true;
   try{
-    const r=await fetch(`${sbUrl}/rest/v1/pb_data?backup_type=eq.session&select=id,payload,updated_at&order=updated_at.desc`,{
-      headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
-    });
+    // Session riadky + tombstones z nastavení SÚČASNE (aby sa vymazanie prenieslo aj počas pollu)
+    const [r,tr]=await Promise.all([
+      fetch(`${sbUrl}/rest/v1/pb_data?backup_type=eq.session&select=id,payload,updated_at&order=updated_at.desc`,{
+        headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
+      }),
+      fetch(`${sbUrl}/rest/v1/pb_data?id=eq.pb_settings&select=payload`,{
+        headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
+      })
+    ]);
     if(!r.ok){_bgPollLock=false;return;}
+    // Aplikuj tombstones (vymaž akcie zmazané na inom zariadení)
+    if(tr.ok){try{const trows=await tr.json();if(trows.length&&trows[0].payload&&trows[0].payload.tombstones)applyTombstones(trows[0].payload.tombstones);}catch(e){}}
     const rows=await r.json();
     const prevSessKeys=new Set(sessArr.map(s=>s.key));
+    // Podpis stavu PRED merge (kľúč + počet otvorených hráčov) — na detekciu akejkoľvek zmeny
+    const sigBefore=sessArr.map(s=>s.key+':'+((wbMap[s.key]||[]).length)).sort().join('|');
     const curSidBefore=curSid; // Capture BEFORE merge — _mergeSessFromCloud may change curSid
     rows.forEach(row=>{if(row.payload)_mergeSessFromCloud(row.payload);});
     _pruneClosedFromSessArr(); // ✅ uzavreté akcie (s odmenou) nikdy nezostanú v sessArr
 
-    // ✅ Was OUR (local) session removed? (closed remotely by admin / force-close)
+    const sigAfter=sessArr.map(s=>s.key+':'+((wbMap[s.key]||[]).length)).sort().join('|');
+    // ✅ Was OUR (local) session removed/closed remotely? (admin close / closed-wins)
     const ourSessClosed=curSidBefore&&prevSessKeys.has(curSidBefore)&&!sessArr.find(s=>s.key===curSidBefore);
-    // ✅ Was a new session added? (remote device started one — don't disrupt current UI)
-    const newSessAdded=sessArr.some(s=>!prevSessKeys.has(s.key));
+    // ✅ Any change at all (new/removed session, closed-wins removed stale open players)?
+    const anyChange=sigBefore!==sigAfter;
 
-    if(ourSessClosed||newSessAdded){
+    if(anyChange){
       saveAll();
       if(ourSessClosed){
         // Our session was closed externally — full reset + notify
@@ -2014,9 +2063,14 @@ async function sbPollSessions(){
         toast('⚠️ Akcia bola uzavretá na inom zariadení');
         console.log('[bgPoll] Naša session',curSidBefore,'uzavretá externe');
       } else {
-        // Only a remote session changed — update session bar without disrupting current work
-        rAppSessBar();updSessBadge();saveAll();
-        console.log('[bgPoll] Nová cudzia session detegovaná — session bar aktualizovaný');
+        // Something else changed — refresh session bar + otvorené/správca bez rušenia rozrobenej práce
+        rAppSessBar();updSessBadge();updInvBadge();
+        if($('p-open')?.classList.contains('on'))rOpen();
+        if($('p-spravca')?.classList.contains('on'))rSpravca();
+        if($('p-moje')?.classList.contains('on'))rMoje();
+        // ak práve pozeráme pokladňu inej než našej akcie, obnov zoznam otvorených hráčov
+        if($('p-reg')?.classList.contains('on'))rWbs();
+        console.log('[bgPoll] Zmena z cloudu — UI aktualizované');
       }
     }
   }catch(e){console.warn('[sbPollSessions]',e);}
@@ -4971,6 +5025,8 @@ function confirmDelSess(){
   const pouts=lPouts();const notes=lNotes();const de=lDE();
   // Archive
   archive.push({key,archivedAt:new Date().toISOString(),sess:sess||{},bills:grpBills,pout:pouts[key],note:notes[key],dateEdit:de[key]});
+  // ✅ TOMBSTONE — zaznač vymazanie, aby ho cloud/iné zariadenie NEVRÁTILO späť
+  const tomb=lTombstones();tomb[key]=new Date().toISOString();sTombstones(tomb);
   // Remove from active data
   closed=closed.filter(w=>(w.sKey||'unknown')!==key);
   sessArr=sessArr.filter(s=>s.key!==key);
@@ -4982,6 +5038,12 @@ function confirmDelSess(){
   delete de[key];sDE(de);
   const deps=lDeposits();delete deps[key];sDeposits(deps);
   cm('m-del-sess');save();rClosed();rAkcie();rAppSessBar();updInvBadge();
+  // ✅ Zmaž cloud riadok akcie + rozšír tombstone cez nastavenia (ostatné zariadenia ju odstránia)
+  if(sbUrl&&sbKey){
+    fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${encodeURIComponent(key)}`,{method:'DELETE',headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}}).catch(()=>{});
+    sbPushSettings().catch(()=>{});
+    sbPush(); // prepíše legacy 'main' snapshot bez vymazanej akcie
+  }
   // ✅ FIX: refreshni aj Správcu/Analýzy — inak akcia zostala na obrazovke a musela sa mazať 2×
   if($('p-spravca')?.classList.contains('on'))rSpravca();
   if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
