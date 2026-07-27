@@ -974,7 +974,7 @@ textarea{resize:none;line-height:1.5;}
 <div class="mw" id="m-editamt"><div class="mb"><div class="mt" data-i18n="edit-amount-hdr">✎ Upraviť sumu</div><div id="m-editamt-info" style="font-size:12px;color:var(--t2);margin-bottom:10px;"></div><div id="m-editamt-items"></div><div class="r2" style="margin-top:10px;"><button class="btn G" onclick="saveEditAmt()" data-i18n="save">Uložiť</button><button class="btn" onclick="cm('m-editamt')" data-i18n="cancel">Zrušiť</button></div></div></div>
 <div class="mw" id="m-drink"><div class="mb"><div class="mt" data-i18n="drink-hdr">🥤 Vydať nápoj</div><div class="fr"><label class="lb" data-i18n="drink-select">Vyber nápoj</label><select id="dsel"></select></div><div class="r2" style="margin-top:10px;"><button class="btn G" onclick="confirmDrink()" data-i18n="drink-btn">Vydať</button><button class="btn" onclick="cm('m-drink')" data-i18n="cancel">Zrušiť</button></div></div></div>
 <div class="mw" id="m-xh"><div class="mb"><div class="mt" id="m-xh-t" data-i18n="xh-hdr">Extra hodina</div><div id="m-xh-b"></div><div style="display:flex;flex-direction:column;gap:7px;margin-top:10px;"><button class="btn G" onclick="addXH('split')" data-i18n="xh-split">Rovnomerne na všetkých hráčov</button><button class="btn B" onclick="addXH('group')" data-i18n="xh-group">Na skupinový účet</button><div style="font-size:11px;color:var(--t3);" data-i18n="xh-specific-lbl">Konkrétny hráč:</div><select id="xh-sel" style="font-size:12px;"></select><button class="btn A" onclick="addXH('specific')" data-i18n="xh-add">Pridať vybranému hráčovi</button></div><button class="btn" style="margin-top:10px;" onclick="cm('m-xh')" data-i18n="cancel">Zavrieť</button></div></div>
-<div class="mw" id="m-pout"><div class="mb"><div class="mt" data-i18n="payout-hdr">💰 Výplata inštruktora</div><div id="m-pout-i" style="font-size:12px;color:var(--t2);margin-bottom:12px;padding:9px;background:var(--bg3);border-radius:var(--rs);line-height:1.7;"></div><div class="fr"><label class="lb" data-i18n="payout-type">Typ výplaty</label><select id="po-type" onchange="updPout()"><option value="fixed" data-i18n="payout-fixed">Fixná: podľa aktivity (35/28/21€)</option><option value="hourly" data-i18n="payout-hourly">Hodinová sadzba</option><option value="custom" data-i18n="payout-custom">Vlastná suma</option></select></div><div class="fr" id="po-h-row" style="display:none;"><label class="lb" data-i18n="payout-hours">Počet hodín</label><input type="number" id="po-hrs" value="2" min="0.5" step="0.5" onchange="updPout()"/></div><div class="fr"><label class="lb">Odmena inštruktora (€)</label><input type="number" id="po-amt" step="0.5" min="0"/></div><div class="fr"><label class="lb">Iné náklady (€)</label><input type="number" id="po-costs" step="0.5" min="0" value="0"/></div><div class="fr"><label class="lb">Poznámka k nákladom</label><textarea id="po-note" rows="3" data-ph="payout-note-ph" placeholder="Dôvod extra nákladov, nákup materiálu…"></textarea></div><div class="r2" style="margin-top:10px;"><button class="btn G" onclick="savePout()" data-i18n="payout-save">Uložiť výplatu</button><button class="btn" onclick="cm('m-pout')" data-i18n="cancel">Zrušiť</button></div></div></div>
+<div class="mw" id="m-pout"><div class="mb"><div class="mt" data-i18n="payout-hdr">💰 Výplata inštruktora</div><div id="m-pout-i" style="font-size:12px;color:var(--t2);margin-bottom:12px;padding:9px;background:var(--bg3);border-radius:var(--rs);line-height:1.7;"></div><div class="fr"><label class="lb">👥 Inštruktori na akcii</label><div id="po-instr-list" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;"></div><div style="display:flex;gap:6px;"><select id="po-instr-sel" style="flex:1;font-size:12px;"></select><button class="btn sm G" type="button" onclick="addPoutInstr()">➕ Pridať</button></div><div style="font-size:10px;color:var(--t3);margin-top:4px;">Odmena sa navrhne ako pevná suma × počet inštruktorov. Každý inštruktor uvidí svoj podiel v Moje akcie.</div></div><div class="fr"><label class="lb" data-i18n="payout-type">Typ výplaty</label><select id="po-type" onchange="updPout()"><option value="fixed" data-i18n="payout-fixed">Fixná: podľa aktivity (35/28/21€)</option><option value="hourly" data-i18n="payout-hourly">Hodinová sadzba</option><option value="custom" data-i18n="payout-custom">Vlastná suma</option></select></div><div class="fr" id="po-h-row" style="display:none;"><label class="lb" data-i18n="payout-hours">Počet hodín</label><input type="number" id="po-hrs" value="2" min="0.5" step="0.5" onchange="updPout()"/></div><div class="fr"><label class="lb">Odmena inštruktora (€)</label><input type="number" id="po-amt" step="0.5" min="0"/></div><div class="fr"><label class="lb">Iné náklady (€)</label><input type="number" id="po-costs" step="0.5" min="0" value="0"/></div><div class="fr"><label class="lb">Poznámka k nákladom</label><textarea id="po-note" rows="3" data-ph="payout-note-ph" placeholder="Dôvod extra nákladov, nákup materiálu…"></textarea></div><div class="r2" style="margin-top:10px;"><button class="btn G" onclick="savePout()" data-i18n="payout-save">Uložiť výplatu</button><button class="btn" onclick="cm('m-pout')" data-i18n="cancel">Zrušiť</button></div></div></div>
 <div class="mw" id="m-note"><div class="mb"><div class="mt" data-i18n="note-hdr">📝 Poznámka inštruktora</div><div class="fr"><label class="lb" data-i18n="note-lbl">Poznámka k akcii</label><textarea id="note-t" rows="4" data-ph="note-ph" placeholder="Priebeh, špeciálne situácie…"></textarea></div><div class="r2" style="margin-top:10px;"><button class="btn G" onclick="saveNote()" data-i18n="save">Uložiť</button><button class="btn" onclick="cm('m-note')" data-i18n="cancel">Zrušiť</button></div></div></div>
 <div class="mw" id="m-chart"><div class="mb" style="max-width:600px;"><div class="mt" data-i18n="chart-hdr">📊 Mesačné porovnanie</div><div style="position:relative;height:280px;"><canvas id="ch-c"></canvas></div><button class="btn" style="margin-top:12px;" onclick="cm('m-chart')" data-i18n="close">Zavrieť</button></div></div>
 <div class="mw" id="m-edates"><div class="mb"><div class="mt" data-i18n="edates-hdr">✎ Upraviť časy akcie</div><div class="r2"><div class="fr"><label class="lb" data-i18n="edates-start">Začiatok — dátum</label><input type="date" id="ed-sd"/></div><div class="fr"><label class="lb">Čas</label><input type="time" id="ed-st"/></div></div><div class="r2"><div class="fr"><label class="lb">Ukončenie — dátum</label><input type="date" id="ed-ed"/></div><div class="fr"><label class="lb">Čas</label><input type="time" id="ed-et"/></div></div><div class="r2" style="margin-top:10px;"><button class="btn G" onclick="saveEdates()" data-i18n="save">Uložiť</button><button class="btn" onclick="cm('m-edates')" data-i18n="cancel">Zrušiť</button></div></div></div>
@@ -1147,7 +1147,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.27a';
+const APP_VERSION='2026.07.27c';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -4252,8 +4252,9 @@ function confirmCloseSess(){
   const savedSess=sessArr.find(s=>s.key===savedKey)||{};
   // Save deposit data persistently (session will be removed from sessArr)
   if(savedSess.deposit){const deps=lDeposits();deps[savedKey]=savedSess.deposit;sDeposits(deps);}
-  // Save payout
-  const pouts=lPouts();pouts[savedKey]={amt:pay,costs,note,type:'manual'};sPouts(pouts);
+  // Save payout — vrátane zoznamu inštruktorov (pre správnu atribúciu odmeny vo viac-inštruktorových akciách)
+  const _closeInstrs=getSessionInstructors(savedSess);
+  const pouts=lPouts();pouts[savedKey]={amt:pay,costs,note,type:'manual',instructors:_closeInstrs.slice()};sPouts(pouts);
   // ✅ Remove session from active sessArr + wbMap so it disappears from top bar & start screen
   sessArr=sessArr.filter(s=>s.key!==savedKey);
   delete wbMap[savedKey];
@@ -5022,6 +5023,9 @@ function confirmDelSess(){
   const key=delSessKey;
   const grpBills=closed.filter(w=>(w.sKey||'unknown')===key);
   const sess=sessArr.find(s=>s.key===key);
+  // ✅ Finálne potvrdenie (rovnako ako pri zmene platby) — mazanie je nezvratné a šíri sa na všetky zariadenia.
+  const _sm=buildSessMap();const _si=_sm[key]||{};
+  if(!confirm(`Naozaj vymazať túto akciu?\n\n${_si.arena||'—'} · ${_si.activity||'—'} · ${_si.instructor||'—'}\nÚčtov: ${grpBills.length} · Tržby: ${fp(grpBills.reduce((s,w)=>s+totalAmt(w),0))}\n\nAkcia sa archivuje a odstráni zo všetkých zariadení.`))return;
   const pouts=lPouts();const notes=lNotes();const de=lDE();
   // Archive
   archive.push({key,archivedAt:new Date().toISOString(),sess:sess||{},bills:grpBills,pout:pouts[key],note:notes[key],dateEdit:de[key]});
@@ -5068,6 +5072,10 @@ function buildSessMap(){
     if(w.sCalRunNumber&&!m[k].calRunNumber)m[k].calRunNumber=w.sCalRunNumber;
     m[k].bills.push(w);
   });
+  // ✅ Ak výplata (pout) eviduje viac inštruktorov (dodatočne priradených), použi ten zoznam —
+  //    inak by uzavretá akcia poznala len primárneho inštruktora z bills (sInstr).
+  const _po=lPouts();
+  Object.keys(m).forEach(k=>{const p=_po[k];if(p&&p.instructors&&p.instructors.length)m[k].instructors=p.instructors.slice();});
   return m;
 }
 function rAkcie(){
@@ -5115,14 +5123,37 @@ function rAkcie(){
   }).join('');
 }
 // ══ PAYOUT ══
+let poutInstrs=[]; // editovateľný zoznam inštruktorov na akcii (ukladá sa do pout.instructors)
+function _poutPerInstr(){const s=buildSessMap()[poutKey];const pb=closed.filter(w=>(w.sKey||'unknown')===poutKey);return rewardPerInstr(pb,s);}
+function renderPoutInstrs(){
+  const list=$('po-instr-list');if(list){
+    list.innerHTML=poutInstrs.length?poutInstrs.map(n=>`<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;background:var(--abg);color:var(--amb);border:.5px solid var(--abd);border-radius:99px;padding:3px 5px 3px 9px;">${escHtml(n)}<button type="button" onclick="removePoutInstr('${escHtml(n).replace(/'/g,"\\'")}')" title="Odobrať" style="border:none;background:var(--rbg);color:var(--red);border-radius:99px;width:16px;height:16px;line-height:1;cursor:pointer;font-size:11px;">×</button></span>`).join(''):`<span style="font-size:11px;color:var(--t3);">Žiadny inštruktor</span>`;
+  }
+  const sel=$('po-instr-sel');if(sel){
+    const avail=instructors.filter(i=>!poutInstrs.includes(i));
+    sel.innerHTML='<option value="">— Vyber inštruktora —</option>'+avail.map(i=>`<option value="${escHtml(i)}">${escHtml(i)}</option>`).join('');
+  }
+}
+function addPoutInstr(){
+  const sel=$('po-instr-sel');const name=sel?sel.value:'';
+  if(!name){toast(t('toast-select-instructor'));return;}
+  if(!poutInstrs.includes(name))poutInstrs.push(name);
+  renderPoutInstrs();updPout(); // prepočítaj navrhovanú odmenu podľa počtu inštruktorov
+}
+function removePoutInstr(name){
+  poutInstrs=poutInstrs.filter(n=>n!==name);
+  renderPoutInstrs();updPout();
+}
 function openPout(key,tot){
   // Recalculate tot from actual bills to ensure accuracy
   const actualTot=closed.filter(w=>(w.sKey||'unknown')===key).reduce((s,w)=>s+totalAmt(w),0);
   poutKey=key;poutTot=actualTot||tot||0;const sm=buildSessMap();const s=sm[key];const pouts=lPouts();const ex=pouts[key];
   const poutBills=closed.filter(w=>(w.sKey||'unknown')===key);
-  const smInstrs=getSessionInstructors(s);const smN=Math.max(1,smInstrs.length);
-  const smPer=rewardPerInstr(poutBills,s);const smTotal=Math.round((smPer*smN)/0.5)*0.5;
-  $('m-pout-i').innerHTML=`<strong style="color:var(--t1);">Inštruktori:</strong> ${smInstrs.join(', ')||'—'}<br><strong style="color:var(--t1);">Tržby:</strong> ${fp(tot)}<br>Odporúčaná odmena (celkom): <strong style="color:var(--amb);">${fp(smTotal)}</strong>${smN>1?`<br><span style="font-size:10px;color:var(--t3);">${smN}× inštruktor · ${fp(smPer)} každý</span>`:''}`;
+  // Zoznam inštruktorov: prednostne z už uloženého pout.instructors, inak z akcie.
+  poutInstrs=(ex&&ex.instructors&&ex.instructors.length)?ex.instructors.slice():getSessionInstructors(s).slice();
+  renderPoutInstrs();
+  const smPer=rewardPerInstr(poutBills,s);const smN=Math.max(1,poutInstrs.length);const smTotal=Math.round((smPer*smN)/0.5)*0.5;
+  $('m-pout-i').innerHTML=`<strong style="color:var(--t1);">Tržby:</strong> ${fp(tot)}<br>Pevná odmena / inštruktor: <strong style="color:var(--amb);">${fp(smPer)}</strong><br>Odporúčaná odmena (celkom): <strong style="color:var(--amb);">${fp(smTotal)}</strong>`;
   $('po-type').value=ex?ex.type:'fixed';$('po-hrs').value=ex&&ex.hrs?ex.hrs:5;
   $('po-amt').value=ex?ex.amt:smTotal.toFixed(2);
   $('po-costs').value=ex?ex.costs||0:0;$('po-note').value=ex?ex.note||'':'';
@@ -5130,22 +5161,24 @@ function openPout(key,tot){
 }
 function updPout(){
   const t=$('po-type').value;$('po-h-row').style.display=t==='hourly'?'block':'none';
+  const smN=Math.max(1,poutInstrs.length);
   if(t==='fixed'){
-    const sm2=buildSessMap();const s2=sm2[poutKey];const smInstrs2=getSessionInstructors(s2);const smN2=Math.max(1,smInstrs2.length);
-    const pb2=closed.filter(w=>(w.sKey||'unknown')===poutKey);
-    const smPer2=rewardPerInstr(pb2,s2);
-    $('po-amt').value=(Math.round((smPer2*smN2)/0.5)*0.5).toFixed(2);
+    $('po-amt').value=(Math.round((_poutPerInstr()*smN)/0.5)*0.5).toFixed(2);
   }else if(t==='hourly'){
     const h=parseFloat($('po-hrs').value)||5;
-    const sm3=buildSessMap();const s3=sm3[poutKey];const smInstrs3=getSessionInstructors(s3);const smN3=Math.max(1,smInstrs3.length);
-    $('po-amt').value=(h*hrRate*smN3).toFixed(2);
+    $('po-amt').value=(h*hrRate*smN).toFixed(2);
   }
+  // aktualizuj info riadok o počte inštruktorov
+  const info=$('m-pout-i');if(info){const smPer=_poutPerInstr();const smTotal=Math.round((smPer*smN)/0.5)*0.5;
+    info.innerHTML=`<strong style="color:var(--t1);">Tržby:</strong> ${fp(poutTot)}<br>Pevná odmena / inštruktor: <strong style="color:var(--amb);">${fp(smPer)}</strong><br>Odporúčaná odmena (celkom): <strong style="color:var(--amb);">${fp(smTotal)}</strong>${smN>1?` <span style="font-size:10px;color:var(--t3);">(${smN}× inštruktor)</span>`:''}`;}
 }
 function savePout(){
   const amt=parseFloat($('po-amt').value)||0;const costs=parseFloat($('po-costs').value)||0;const note=$('po-note').value.trim();const type=$('po-type').value;const hrs=parseFloat($('po-hrs').value)||0;
   if(costs>0&&!note){toast(t('toast-cost-note-required'));return;}
-  const pouts=lPouts();pouts[poutKey]={amt,costs,note,type,hrs};sPouts(pouts);
-  cm('m-pout');save();toast('Výplata uložená: '+fp(amt));rAkcie();if($('p-closed')?.classList.contains('on'))rClosed();
+  const pouts=lPouts();pouts[poutKey]={amt,costs,note,type,hrs,instructors:poutInstrs.slice()};sPouts(pouts);
+  // ✅ Zrkadli zoznam inštruktorov aj do aktívnej akcie (ak ešte beží), aby bol konzistentný.
+  const _as=sessArr.find(s=>s.key===poutKey);if(_as)_as.instructors=poutInstrs.slice();
+  cm('m-pout');save();toast('Výplata uložená: '+fp(amt)+(poutInstrs.length>1?` · ${poutInstrs.length}× inštruktor`:''));rAkcie();if($('p-closed')?.classList.contains('on'))rClosed();
   if($('p-spravca')?.classList.contains('on'))rSpravca();
   if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
   if($('p-moje')?.classList.contains('on'))rMoje();
@@ -5439,7 +5472,7 @@ function rSpravca(){
             ${pout?`<span style="font-size:10px;padding:1px 7px;border-radius:99px;background:var(--abg);color:var(--amb);">💰 ${fp(pout.amt)}</span>`:''}
             ${grpInv>0?`<span style="font-size:10px;padding:1px 7px;border-radius:99px;background:${sessInvPaid?'var(--pbg)':'var(--abg)'};color:${sessInvPaid?'var(--pur)':'var(--amb)'};">${sessInvPaid?'🧾✅':'🧾⏳'} ${fp(grpInv)}</span>`:''}
           </div>
-          <div style="font-size:11px;color:var(--t2);">👤 ${escHtml(fw.sInstr||'—')} &nbsp;·&nbsp; 📅 ${startStr}</div>
+          <div style="font-size:11px;color:var(--t2);">👤 ${escHtml((pout&&pout.instructors&&pout.instructors.length?pout.instructors.join(' + '):(fw.sInstr||'—')))} &nbsp;·&nbsp; 📅 ${startStr}</div>
           <div style="font-size:10px;color:var(--t3);margin-top:1px;">🏁 ${endStr}</div>
           ${headNote
             ?`<div onclick="event.stopPropagation();${closeNote?`openPout('${key}',${grpTot})`:`openNote('${key}')`}" title="Kliknutím upravíš poznámku k akcii" style="cursor:pointer;font-size:11px;line-height:1.35;color:var(--amb);font-weight:600;margin-top:6px;background:var(--abg);border:.5px solid var(--abd);border-left:3px solid var(--amb);border-radius:7px;padding:6px 10px;max-width:100%;white-space:pre-wrap;word-break:break-word;">📝 ${escHtml(headNote)} <span style="opacity:.55;font-weight:400;font-size:10px;">&nbsp;✎ upraviť</span></div>`
@@ -5561,20 +5594,24 @@ function rMoje(){
   if(!isInst()&&!isAdmin()){el.innerHTML='<div class="empty" style="padding:2rem;">Prihlás sa</div>';return;}
   const myName=curInstName();
   const now=new Date();const cutoff=new Date(now.getTime()-30*24*3600000);
+  const pouts=lPouts();const notes=lNotes();const de=lDE();
+  // ✅ Akcia je "moja" ak som na účte (sInstr) ALEBO ak ma pout.instructors eviduje ako inštruktora.
+  //    (Dodatočne priradený druhý inštruktor cez okno odmeny sa tak korektne zobrazí a dostane podiel.)
+  const _isMineSess=(k,sInstr)=>{const p=pouts[k];if(p&&p.instructors&&p.instructors.length)return p.instructors.includes(myName);return sInstr===myName;};
   const myBills=closed.filter(w=>{
-    if(w.sInstr!==myName)return false;
-    if(!w.closedAt)return false;
-    return new Date(w.closedAt)>=cutoff;
+    if(!w.closedAt||new Date(w.closedAt)<cutoff)return false;
+    return _isMineSess(w.sKey||'unknown',w.sInstr);
   });
   if(!myBills.length){el.innerHTML=`<div class="empty" style="padding:2rem;">Žiadne akcie za posledných 30 dní</div>`;return;}
   const groups={};myBills.forEach(w=>{const k=w.sKey||'unknown';if(!groups[k])groups[k]=[];groups[k].push(w);});
   const skeys=Object.keys(groups).sort((a,b)=>(groups[b][0].closedAt||'').localeCompare(groups[a][0].closedAt||''));
-  const pouts=lPouts();const notes=lNotes();const de=lDE();
+  // podiel odmeny pre tohto inštruktora = celková odmena / počet inštruktorov akcie
+  const _myShare=(k)=>{const p=pouts[k];if(!p)return 0;const n=Math.max(1,(p.instructors&&p.instructors.length)||1);return p.amt/n;};
   // My totals
   const myTot=myBills.reduce((s,w)=>s+totalAmt(w),0);
   const myCash=myBills.reduce((s,w)=>s+wCashAmt(w)+wInvoiceAmt(w),0);
   const myCard=myBills.reduce((s,w)=>s+wCardAmt(w),0);
-  const myPayout=skeys.reduce((s,k)=>s+(pouts[k]?pouts[k].amt:0),0);
+  const myPayout=skeys.reduce((s,k)=>s+_myShare(k),0);
   let html=`
     <div class="card" style="border-color:var(--gbd);">
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">👋 ${escHtml(myName)} — posledných 30 dní</div>
@@ -5609,7 +5646,7 @@ function rMoje(){
           <div class="game-stat"><div class="game-stat-v">${grp.length}</div><div class="game-stat-l">${t('players-added')}</div></div>
           <div class="game-stat"><div class="game-stat-v" style="color:var(--grn);">${fp(grpCash)}</div><div class="game-stat-l">💵</div></div>
           <div class="game-stat"><div class="game-stat-v" style="color:var(--blu);">${fp(grpCard)}</div><div class="game-stat-l">💳</div></div>
-          ${pout?`<div class="game-stat"><div class="game-stat-v" style="color:var(--amb);">${fp(pout.amt)}</div><div class="game-stat-l">odmena</div></div>`:''}
+          ${pout?`<div class="game-stat"><div class="game-stat-v" style="color:var(--amb);">${fp(_myShare(key))}</div><div class="game-stat-l">${(pout.instructors&&pout.instructors.length>1)?'moja odmena':'odmena'}</div></div>`:''}
         </div>
         <button class="btn sm B" onclick="event.stopPropagation();openNote('${key}')" style="margin-left:8px;flex-shrink:0;">📝</button>
         <span style="font-size:10px;color:var(--t3);margin-left:6px;">▼</span>
