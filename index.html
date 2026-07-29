@@ -1148,7 +1148,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.27e';
+const APP_VERSION='2026.07.27f';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -6021,20 +6021,27 @@ function rAnalyzy(){
   const instStats={};
   const pouts=lPouts();
   const instDeps=lDeposits();
+  // Inštruktori akcie: z pout.instructors (viac-inštruktorové akcie), inak z účtu (sInstr).
+  const _sessInstrsOf=(k,sInstr)=>{const p=pouts[k];if(p&&p.instructors&&p.instructors.length)return p.instructors;return sInstr?[sInstr]:['Neznámy'];};
+  // Tržba akcie sa pripíše KAŽDÉMU jej inštruktorovi (obaja ju odviedli) — konzistentné s Moje akcie.
   bills.forEach(w=>{
-    const n=w.sInstr||'Neznámy';
-    if(!instStats[n])instStats[n]={name:n,games:new Set(),customers:0,cash:0,card:0,invoice:0,odmena:0,deposit:0};
-    instStats[n].games.add(w.sKey||'unknown');
-    instStats[n].customers++;
-    instStats[n].card+=wCardAmt(w);instStats[n].invoice+=wInvoiceAmt(w);instStats[n].cash+=wCashAmt(w);
-    instStats[n].deposit+=depositItemAmt(w);
+    const k=w.sKey||'unknown';
+    _sessInstrsOf(k,w.sInstr).forEach(n=>{
+      if(!instStats[n])instStats[n]={name:n,games:new Set(),customers:0,cash:0,card:0,invoice:0,odmena:0,deposit:0};
+      instStats[n].games.add(k);
+      instStats[n].customers++;
+      instStats[n].card+=wCardAmt(w);instStats[n].invoice+=wInvoiceAmt(w);instStats[n].cash+=wCashAmt(w);
+      instStats[n].deposit+=depositItemAmt(w);
+    });
   });
-  // Add odmena and popup deposits from pouts (per game key)
+  // Odmena = PODIEL inštruktora (pout.instrPay), inak rovnomerne. Popup zálohy per akcia.
   Object.values(instStats).forEach(inst=>{
     inst.games.forEach(gameKey=>{
       const p=pouts[gameKey];
-      if(p&&p.amt)inst.odmena+=p.amt;
-      // Add popup deposits per game
+      if(p&&p.amt){
+        if(p.instrPay&&p.instrPay[inst.name]!=null)inst.odmena+=p.instrPay[inst.name];
+        else{const nn=Math.max(1,(p.instructors&&p.instructors.length)||1);inst.odmena+=p.amt/nn;}
+      }
       const d=instDeps[gameKey];
       if(d)inst.deposit+=d.amount;
       else{const sess=sessArr.find(x=>x.key===gameKey);if(sess&&sess.deposit)inst.deposit+=sess.deposit.amount;}
@@ -6042,10 +6049,14 @@ function rAnalyzy(){
   });
   const instEl=$('a-instructors');
   if(instEl){
-    const sorted=Object.values(instStats).sort((a,b)=>(a.cash+a.card)-(b.cash+b.card)).reverse();
+    // ✅ Zoradenie podľa ODMENY (najväčšia odmena hore).
+    const sorted=Object.values(instStats).sort((a,b)=>(b.odmena-a.odmena)||((b.cash+b.card+(b.invoice||0)+b.deposit)-(a.cash+a.card+(a.invoice||0)+a.deposit)));
     if(!sorted.length){instEl.innerHTML='<div class="empty">Žiadne dáta</div>';}
     else{
       const anyDeposit=sorted.some(i=>i.deposit>0);
+      // ✅ Medaila 🥇 pre inštruktora s NAJVÄČŠOU TRŽBOU (Celkom) — komu patrí mesačný bonus.
+      let _topTrzba=-1,_topName=null;
+      sorted.forEach(i=>{const tr=i.cash+i.card+(i.invoice||0)+i.deposit;if(tr>_topTrzba){_topTrzba=tr;_topName=i.name;}});
       instEl.innerHTML=`<div style="display:flex;flex-direction:column;gap:6px;">
         <div style="display:grid;grid-template-columns:1fr 90px 70px 70px ${anyDeposit?'70px ':''}70px 70px;gap:6px;font-size:11px;font-weight:700;color:var(--t3);padding:6px 10px;text-transform:uppercase;letter-spacing:.05em;border-bottom:.5px solid var(--b1);">
           <span>Inštruktor</span><span style="text-align:right;">Celkom</span>
@@ -6057,7 +6068,7 @@ function rAnalyzy(){
         </div>
         ${sorted.map(i=>{const tot=i.cash+i.card+(i.invoice||0)+i.deposit;return`<div style="display:grid;grid-template-columns:1fr 90px 70px 70px ${anyDeposit?'70px ':''}70px 70px;gap:6px;align-items:center;padding:10px;border-radius:var(--rs);background:var(--bg2);border:.5px solid var(--b1);">
           <div>
-            <div style="font-size:14px;font-weight:700;color:var(--t1);">${escHtml(i.name)}</div>
+            <div style="font-size:14px;font-weight:700;color:var(--t1);display:flex;align-items:center;gap:6px;">${i.name===_topName?`<span title="Najväčšia tržba za obdobie — kandidát na mesačný bonus" style="font-size:15px;">🥇</span>`:''}${escHtml(i.name)}</div>
             <div style="font-size:10px;color:var(--t3);margin-top:2px;">${i.games.size} hier · ${i.customers} zák.</div>
           </div>
           <div style="text-align:right;font-size:16px;font-weight:800;color:var(--grn);">${fp(tot)}</div>
