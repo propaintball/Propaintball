@@ -1148,7 +1148,7 @@ function saveAll(){LS.s('pb_p',prods);LS.s('pb_wb',wbMap);LS.s('pb_cl',closed);L
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.07.27f';
+const APP_VERSION='2026.08.04a';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -3629,10 +3629,17 @@ function _checkDepositThenGrpModal(){
 let _depositAfterGrp=false;
 function showGrpModal(){
   const wbs=getWbs();const sel=wbs.filter(w=>pendGrp.includes(w.id));const tot=sel.reduce((s,w)=>s+totalAmt(w),0);
-  // Calculate deposit for this session
+  // Calculate deposit for this session.
+  // ✅ FIX: zálohu (popup) odpočítaj LEN ak je jej DRŽITEĽ v tejto skupine — inak sa pri platbe
+  //    na viac dávok (napr. hotovosť + karta) odpočítala v každej dávke znova (chybné "Na inkaso").
+  //    Individuálne zatváranie to už robilo správne cez getDepositForWb(wbId).
   const sess=getSess();let grpDep=0;
-  if(sess&&sess.deposit){grpDep=sess.deposit.amount;}
-  else{const deps=lDeposits();if(deps[actKey()])grpDep=deps[actKey()].amount;}
+  const depMeta=(sess&&sess.deposit)?sess.deposit:(lDeposits()[actKey()]||null);
+  if(depMeta&&depMeta.amount){
+    if(depMeta.wbId){ if(sel.some(w=>w.id===depMeta.wbId))grpDep=depMeta.amount; }
+    // Legacy záloha bez priradeného hráča → odpočítaj len v PRVEJ dávke (kým nie je nič uzavreté).
+    else if(!closed.some(w=>(w.sKey||'unknown')===actKey()))grpDep=depMeta.amount;
+  }
   const depProd=sel.reduce((s,w)=>s+depositItemAmt(w),0);
   const totalDep=grpDep+depProd;
   const naInkaso=tot-totalDep;
