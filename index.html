@@ -1483,7 +1483,7 @@ function saveAll(){
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.08.18e';
+const APP_VERSION='2026.08.18f';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -4532,7 +4532,13 @@ function rWbs(){
   }
 }
 function toggleAll(){const wbs=getWbs();if(chkd.size===wbs.length){chkd.clear();}else{wbs.forEach(w=>chkd.add(w.id));}rWbs();}
-function togChk(id){chkd.has(id)?chkd.delete(id):chkd.add(id);rWbs();}
+function togChk(id){
+  chkd.has(id)?chkd.delete(id):chkd.add(id);
+  rWbs();
+  // ✅ Na obrazovke „Otvorené" sa zoznam nikdy neprekresľoval, takže zaškrtnutie
+  //    nebolo vidieť a vyzeralo to, že klikanie nefunguje.
+  if($('p-open')?.classList.contains('on'))rOpen();
+}
 function updMBtn(){
   const b=$('mbtn');const c=$('mbtncnt');const n=chkd.size;
   if(n>1){if(b){b.style.display='inline-flex';if(c)c.textContent=n;}}else{if(b)b.style.display='none';}
@@ -4681,6 +4687,27 @@ function assignWb(id,name,email){
   if(closedDup){toast('ID '+id+' už bol použitý (uzavretý účet '+closedDup.name+')');return;}
   wbs.push({id,name:name||'Hráč',email:email||'',items:[],sKey:actKey(),sArena:s?.arena,sInstr:s?.instructor,sAct:s?.activity,openedAt:new Date().toISOString(),bUsed:0,bLoad:0,dG:[],pkgDone:false});
   setWbs(wbs);selId=id;save();rWbs();rBill();rPbt();rDrk();rProds();toast((currentLang==='en'?`#${wbs.length} ${name||'Player'} added`:`#${wbs.length} ${name||'Hráč'} pridaný`));
+}
+// Na „Otvorené" vidíš viacero akcií naraz, ale payAll()/grpCheckout() pracovali
+// s `getWbs()`, teda len s práve zvolenou akciou (curSid). Preto sa označovanie
+// hráčov v inej než aktuálnej akcii tvárilo, že nefunguje.
+// Tieto varianty sú viazané na sKey a v prípade potreby najprv prepnú akciu.
+function _sessSwitchIfNeeded(sKey){
+  if(curSid!==sKey){curSid=sKey;selId=null;save();rAppSessBar();}
+}
+function payAllSess(sKey){
+  if(!currentUser){toast(t('toast-login-required'));return;}
+  _sessSwitchIfNeeded(sKey);
+  const allowed=(wbMap[sKey]||[]).filter(w=>canEditWb(w.id));
+  if(!allowed.length){toast('Nemáš oprávnenie na žiadneho hráča');return;}
+  pendGrp=allowed.map(w=>w.id);_checkDepositThenGrpModal();
+}
+function grpCheckoutSess(sKey){
+  if(!currentUser){toast(t('toast-login-required'));return;}
+  _sessSwitchIfNeeded(sKey);
+  const sel=(wbMap[sKey]||[]).filter(w=>chkd.has(w.id)&&canEditWb(w.id));
+  if(!sel.length){toast('Označ hráčov (musíš byť ich inštruktor)');return;}
+  pendGrp=sel.map(w=>w.id);_checkDepositThenGrpModal();
 }
 function payAll(){
   if(!currentUser){toast(t('toast-login-required'));return;}
@@ -5245,6 +5272,7 @@ function confirmPay(){
   auditLog('bill-close',w.name+' '+payM+' '+fp(billAmt(w)));
   if(w.email){const cust=findCustomerByEmail(w.email);if(!cust)addCustomer(w.name,w.email,'',false);}
   pendClose=null;cm('m-pay');save();rWbs();rBill();rPbt();rDrk();
+  if($('p-open')?.classList.contains('on'))rOpen();   // ✅ inak zaplatený účet ostal visieť v „Otvorené"
   if($('p-closed')?.classList.contains('on'))rClosed();
   if($('p-spravca')?.classList.contains('on'))rSpravca();
   if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
@@ -5467,6 +5495,7 @@ function _doConfirmGrp(){
   const newWbs=wbs.filter(w=>!pendGrp.includes(w.id));setWbs(newWbs);
   pendGrp.forEach(id=>{if(chkd.has(id))chkd.delete(id);});if(pendGrp.includes(selId))selId=null;
   cm('m-grp');save();rWbs();rBill();rPbt();rDrk();
+  if($('p-open')?.classList.contains('on'))rOpen();   // ✅ to isté pre skupinovú platbu
   if($('p-closed')?.classList.contains('on'))rClosed();
   if($('p-spravca')?.classList.contains('on'))rSpravca();
   if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
@@ -5678,6 +5707,7 @@ function rOpen(){
       const isStale=sAgeMs>20*3600000;
       const staleLbl=sAgeMs>86400000?Math.floor(sAgeMs/86400000)+'d':Math.floor(sAgeMs/3600000)+'h';
       const isEmpty=grpWbs.length===0;
+      const chkInSess=grpWbs.filter(w=>chkd.has(w.id)).length;   // označení hráči v TEJTO akcii
       // Rozbalené ak je to aktuálna akcia ALEBO je prázdna (nech je vidno tlačidlo na uzavretie)
       const isActive=sKey===curSid||isEmpty;
       html+=`
@@ -5734,7 +5764,8 @@ function rOpen(){
           <!-- Skupinové akcie pod hráčmi -->
           <div style="padding:8px 10px;background:var(--bg3);border-top:.5px solid var(--b1);display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
             <button class="btn sm B" onclick="event.stopPropagation();gT('reg')">${t('add-player-open')}</button>
-            ${isActive&&grpWbs.length>0?`<button class="btn sm G" onclick="event.stopPropagation();payAll()">${t('pay-all-open')}</button>`:''}
+            ${grpWbs.length>0?`<button class="btn sm G" onclick="event.stopPropagation();payAllSess('${sKey}')">${t('pay-all-open')}</button>`:''}
+            ${chkInSess>0?`<button class="btn sm A" onclick="event.stopPropagation();grpCheckoutSess('${sKey}')">💳 Zaplatiť označených (${chkInSess})</button>`:''}
             ${isAdmin()?`<button class="btn sm" onclick="event.stopPropagation();adminForceCloseSess('${sKey}')" style="margin-left:auto;background:var(--rbg);border-color:var(--rbd);color:var(--red);font-size:${isEmpty?'11px':'10px'};${isEmpty?'font-weight:700;':''}" title="Zabudnutá hra — admin uzavretie">🗑 ${isEmpty?'Uzavrieť zabudnutú akciu':'Zabudnutá hra'}</button>`:''}
           </div>
         </div>
