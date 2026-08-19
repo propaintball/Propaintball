@@ -993,7 +993,28 @@ textarea{resize:none;line-height:1.5;}
   <div class="r2"><button class="btn R" id="rc-go" onclick="confirmRestore()" disabled style="opacity:.4;">⚠️ Nahradiť všetko</button><button class="btn" onclick="cm('m-restore-confirm')" data-i18n="cancel">Zrušiť</button></div>
 </div></div>
 <!-- MODALS -->
-<div class="mw" id="m-pay"><div class="mb"><div class="mt">💳 Spôsob platby</div><div id="pay-prev" style="margin-bottom:12px;font-size:12px;"></div><div id="pay-sync" style="font-size:10px;margin:-6px 0 10px;min-height:13px;"></div><div class="pt" style="grid-template-columns:1fr 1fr 1fr;"><div class="po" id="po-c" onclick="selPay('cash')"><div class="poi">💵</div><div class="pol">Hotovosť</div></div><div class="po" id="po-k" onclick="selPay('card')"><div class="poi">💳</div><div class="pol">Karta</div></div><div class="po" id="po-f" onclick="selPay('invoice')"><div class="poi">🧾</div><div class="pol">Faktúra</div></div></div><button class="btn G" id="pay-btn" onclick="confirmPay()" disabled style="opacity:.4;">Potvrdiť platbu</button><button class="btn" style="margin-top:7px;" onclick="cm('m-pay')" data-i18n="cancel">Zrušiť</button></div></div>
+<div class="mw" id="m-pay"><div class="mb"><div class="mt">💳 Spôsob platby</div>
+  <div id="pay-prev" style="margin-bottom:12px;font-size:12px;"></div>
+  <div id="pay-sync" style="font-size:10px;margin:-6px 0 10px;min-height:13px;"></div>
+  <div class="pt" style="grid-template-columns:1fr 1fr 1fr;"><div class="po" id="po-c" onclick="selPay('cash')"><div class="poi">💵</div><div class="pol">Hotovosť</div></div><div class="po" id="po-k" onclick="selPay('card')"><div class="poi">💳</div><div class="pol">Karta</div></div><div class="po" id="po-f" onclick="selPay('invoice')"><div class="poi">🧾</div><div class="pol">Faktúra</div></div></div>
+  <!-- Sprepitné: obsluha zadá, KOĽKO zákazník platí (napr. 33 pri účte 30) — rozdiel je sprepitné -->
+  <div style="display:flex;align-items:center;gap:9px;margin-top:11px;background:var(--bg3);border-radius:var(--rs);padding:8px 11px;">
+    <span style="font-size:11.5px;color:var(--t2);white-space:nowrap;">Zákazník platí</span>
+    <input type="number" id="pay-given" step="0.5" min="0" inputmode="decimal" oninput="payTipCalc()" style="width:96px;font-size:15px;font-weight:700;text-align:right;"/>
+    <span id="pay-tip-lbl" style="font-size:11px;flex:1;text-align:right;color:var(--t3);"></span>
+  </div>
+  <div id="pay-split-toggle" style="margin-top:9px;">
+    <button class="btn sm" style="width:100%;" onclick="payToggleSplit()">⊞ Rozdeliť po položkách</button>
+  </div>
+  <div id="pay-split-box" style="display:none;margin-top:9px;background:var(--bg3);border-radius:var(--rs);padding:9px 11px;">
+    <div style="font-size:10.5px;color:var(--t3);margin-bottom:7px;">Nastav spôsob platby pre každú položku zvlášť.</div>
+    <div id="pay-split-rows"></div>
+    <div id="pay-split-sum" style="font-size:11px;margin-top:7px;padding-top:7px;border-top:.5px solid var(--b1);"></div>
+    <button class="btn sm" style="margin-top:7px;width:100%;" onclick="payToggleSplit()">✕ Zrušiť rozdelenie</button>
+  </div>
+  <button class="btn G" id="pay-btn" onclick="confirmPay()" disabled style="opacity:.4;margin-top:11px;">Potvrdiť platbu</button>
+  <button class="btn" style="margin-top:7px;" onclick="cm('m-pay')" data-i18n="cancel">Zrušiť</button>
+</div></div>
 <div class="mw" id="m-epay"><div class="mb"><div class="mt" data-i18n="change-pay-hdr">Zmeniť spôsob platby</div><p style="font-size:12px;color:var(--t2);margin-bottom:12px;" data-i18n="change-pay-text">Naozaj zmeniť?</p><div class="pt" style="grid-template-columns:1fr 1fr 1fr;"><div class="po" id="epo-c" onclick="selEPay('cash')"><div class="poi">💵</div><div class="pol">Hotovosť</div></div><div class="po" id="epo-k" onclick="selEPay('card')"><div class="poi">💳</div><div class="pol">Karta</div></div><div class="po" id="epo-f" onclick="selEPay('invoice')"><div class="poi">🧾</div><div class="pol">Faktúra</div></div></div><div class="r2" style="margin-top:10px;"><button class="btn A" onclick="confirmEPay()" data-i18n="confirm">Potvrdiť</button><button class="btn" onclick="cm('m-epay')" data-i18n="cancel">Zrušiť</button></div></div></div>
 <div class="mw" id="m-grp"><div class="mb"><div class="mt">Skupinová platba</div><div id="grp-prev"></div><div id="grp-sync" style="font-size:10px;margin:6px 0 0;min-height:13px;"></div><div class="pt" style="margin-top:10px;grid-template-columns:1fr 1fr 1fr;"><div class="po" id="gpo-c" onclick="selGPay('cash')"><div class="poi">💵</div><div class="pol">Hotovosť</div></div><div class="po" id="gpo-k" onclick="selGPay('card')"><div class="poi">💳</div><div class="pol">Karta</div></div><div class="po" id="gpo-f" onclick="selGPay('invoice')"><div class="poi">🧾</div><div class="pol">Faktúra</div></div></div><div class="r2" style="margin-top:10px;"><button class="btn G" id="grp-btn" onclick="confirmGrp()" disabled style="opacity:.4;" data-i18n="confirm">Potvrdiť</button><button class="btn" onclick="cm('m-grp')" data-i18n="cancel">Zrušiť</button></div></div></div>
 <div class="mw" id="m-adm"><div class="mb">
@@ -1483,7 +1504,7 @@ function saveAll(){
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.08.18f';
+const APP_VERSION='2026.08.19a';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1694,19 +1715,62 @@ function agencyPaidExtrasAmt(w,payM){
   return(w.paidExtras||[]).filter(e=>!payM||e.payM===payM).reduce((s,e)=>s+e.price*e.qty*(1-(e.disc||0)/100),0);
 }
 // Revenue split — used by all analytics, XLS, reports
+// ══════════════════════════════════════════════════════════════════
+// PLATBY: delenie po položkách + sprepitné  (v4g)
+//
+// MODEL
+//   w.payM        — hlavný spôsob platby účtu (ako doteraz)
+//   i.payM        — voliteľne NA POLOŽKE; prebije w.payM (napr. balík hotovosť,
+//                   guličky karta). Ak chýba, platí w.payM → staré účty fungujú bez migrácie.
+//   w.tip         — {amt, m} sprepitné. NIE je položka účtu a NEVSTUPUJE do tržby.
+//                   Zadáva sa na termináli, patrí inštruktorovi.
+//
+// Prečo nie produkt „Sprepitné": rovnaký problém ako záloha — nafúklo by tržbu,
+// štatistiky predajnosti aj medailu za najvyššiu tržbu. Preto samostatné pole.
+//
+// Tržba vs. inkaso:
+//   wCashAmt/wCardAmt/wInvoiceAmt = TRŽBA (bez sprepitného) → všetkých 83 miest ostáva správnych
+//   wTipAmt(w[,m])                = sprepitné zvlášť
+//   wCollected(w,m)               = čo naozaj prišlo do zásuvky / na terminál
+// ══════════════════════════════════════════════════════════════════
+function itemPayM(w,i){return i.payM||w.payM||'cash';}
+function itemAmt(i){return i.price*i.qty*(1-(i.disc||0)/100);}
+// Suma položiek účtu zaplatených daným spôsobom
+function billAmtBy(w,m){
+  return(w.items||[]).filter(i=>itemPayM(w,i)===m).reduce((s,i)=>s+itemAmt(i),0);
+}
+// Je účet rozdelený medzi viac spôsobov platby?
+function isSplitBill(w){
+  const set=new Set((w.items||[]).map(i=>itemPayM(w,i)));
+  return set.size>1;
+}
+function wTipAmt(w,m){
+  const t=w&&w.tip;
+  if(!t||!t.amt)return 0;
+  if(m&&(t.m||'cash')!==m)return 0;
+  return t.amt;
+}
+// Inkaso = tržba + sprepitné. Na uzávierku zásuvky a odsúhlasenie terminálu.
+function wCollected(w,m){
+  const rev=m==='cash'?wCashAmt(w):m==='card'?wCardAmt(w):wInvoiceAmt(w);
+  return rev+wTipAmt(w,m);
+}
 function wCashAmt(w){
   const extC=agencyPaidExtrasAmt(w,'cash');
   if(extC>0)return extC+(w.payM==='cash'?agencyPkgBillAmt(w):0);
+  if(isSplitBill(w))return billAmtBy(w,'cash');
   return(w.payM==='cash'||(!w.payM&&!isAgencyWb(w)))?billAmt(w):0;
 }
 function wCardAmt(w){
   const extK=agencyPaidExtrasAmt(w,'card');
   if(extK>0)return extK+(w.payM==='card'?agencyPkgBillAmt(w):0);
+  if(isSplitBill(w))return billAmtBy(w,'card');
   return w.payM==='card'?billAmt(w):0;
 }
 function wInvoiceAmt(w){
   // Agency: invoice = package items amount (extras paid separately)
   if(isAgencyWb(w)&&w.payM==='invoice'){return agencyPkgBillAmt(w);}
+  if(isSplitBill(w))return billAmtBy(w,'invoice');
   return w.payM==='invoice'?billAmt(w):0;
 }
 // Voucher (darčekový poukaz) amount used on this bill — voucher items have negative price
@@ -1722,7 +1786,17 @@ function wPayLabel(w){
     if(extC>0)parts.push('Hotovosť (doplnky)');
     return parts.join(' + ');
   }
-  return w.payM==='card'?'Karta':w.payM==='invoice'?'Faktúra':'Hotovosť';
+  const LBL={cash:'Hotovosť',card:'Karta',invoice:'Faktúra'};
+  let base;
+  if(isSplitBill(w)){
+    base=['cash','card','invoice'].filter(m=>billAmtBy(w,m)>0.001)
+      .map(m=>`${LBL[m]} ${fp(billAmtBy(w,m))}`).join(' + ');
+  }else{
+    base=LBL[w.payM]||'Hotovosť';
+  }
+  const tip=wTipAmt(w);
+  const tm=w&&w.tip&&w.tip.m;
+  return base+(tip>0?` · 🎁 ${fp(tip)}${tm==='card'?' 💳':' 💵'}`:'');
 }
 function fp(v){return'€'+(+v).toFixed(2);}
 // Druhá vrstva obrany: mená z VEREJNÉHO webu (pb_event_signups) a z Google Kalendára
@@ -5191,7 +5265,13 @@ function _proceedCloseBill(wbId){
   const b=$('pay-btn');b.disabled=true;b.style.opacity='.4';
   // ✅ Ak bola akcia oživená, predvyplň zapamätaný spôsob platby
   if(w._prevPayM){setTimeout(()=>selPay(w._prevPayM),0);}
+  // reset stavu sprepitného a delenia pri každom otvorení okna
+  _paySplit=null;_payTip=0;
+  if($('pay-split-box'))$('pay-split-box').style.display='none';
+  if($('pay-split-toggle'))$('pay-split-toggle').style.display=(w.items||[]).length>1?'block':'none';
+  if($('pay-given')){$('pay-given').value=(billAmt(w)-getDepositForWb(wbId)).toFixed(2);}
   _renderPayPrev(w,wbId);
+  payTipCalc();
   om('m-pay');
   payVerify('single',actKey(),wbId); // ✅ over sumu proti cloudu (na pozadí, neblokuje)
 }
@@ -5206,6 +5286,62 @@ function selPay(m){
     }
   }
   payM=m;$('po-c').className='po'+(m==='cash'?' cash':'');$('po-k').className='po'+(m==='card'?' card':'');$('po-f').className='po'+(m==='invoice'?' invoice':'');const b=$('pay-btn');b.disabled=false;b.style.opacity='1';
+  // Zmena hlavného spôsobu prepíše aj položky, ktoré nemajú vlastné nastavenie
+  if(_paySplit){Object.keys(_paySplit).forEach(k=>{if(_paySplit[k]==='_main')_paySplit[k]=m;});payRenderSplit();}
+  payTipCalc();
+}
+// ── SPREPITNÉ + DELENIE PO POLOŽKÁCH ──
+let _paySplit=null;   // index položky → spôsob platby (null = nerozdelené)
+let _payTip=0;
+function _payWb(){return (getWbs()||[]).find(x=>x.id===pendClose);}
+// Obsluha zadá, koľko zákazník platí. Rozdiel oproti účtu je sprepitné.
+function payTipCalc(){
+  const w=_payWb();if(!w)return;
+  const due=billAmt(w)-getDepositForWb(pendClose);
+  const el=$('pay-given'),lbl=$('pay-tip-lbl');
+  if(!el||!lbl)return;
+  const given=parseFloat(el.value);
+  if(isNaN(given)||el.value===''){_payTip=0;lbl.innerHTML='<span style="color:var(--t3);">bez sprepitného</span>';return;}
+  const diff=Math.round((given-due)*100)/100;
+  if(diff>0.001){
+    _payTip=diff;
+    const instr=(getSessionInstructors(getSess())||[]).map(n=>n.split(' ')[0]).join(' + ')||'inštruktorovi';
+    const anyCard=_paySplit?Object.values(_paySplit).includes('card'):payM==='card';
+    lbl.innerHTML=`<span style="color:var(--grn);font-weight:700;">🎁 Sprepitné ${fp(diff)} ${anyCard?'💳':'💵'}</span> <span style="color:var(--t3);">→ ${escHtml(instr)}</span>`;
+  }else if(diff<-0.001){
+    _payTip=0;
+    lbl.innerHTML=`<span style="color:var(--red);font-weight:700;">chýba ${fp(-diff)}</span>`;
+  }else{_payTip=0;lbl.innerHTML='<span style="color:var(--t3);">presne, bez sprepitného</span>';}
+}
+function payToggleSplit(){
+  const w=_payWb();if(!w)return;
+  if(_paySplit){_paySplit=null;$('pay-split-box').style.display='none';$('pay-split-toggle').style.display='block';return;}
+  _paySplit={};(w.items||[]).forEach((it,i2)=>{_paySplit[i2]=it.payM||payM||'cash';});
+  $('pay-split-box').style.display='block';$('pay-split-toggle').style.display='none';
+  payRenderSplit();
+}
+function paySetItem(i2,m){
+  if(!_paySplit)return;
+  _paySplit[i2]=m;payRenderSplit();
+  const b=$('pay-btn');b.disabled=false;b.style.opacity='1';
+}
+function payRenderSplit(){
+  const w=_payWb();if(!w||!_paySplit)return;
+  const rows=$('pay-split-rows');if(!rows)return;
+  const M=[['cash','💵'],['card','💳'],['invoice','🧾']];
+  rows.innerHTML=(w.items||[]).map((it,i2)=>{
+    const cur=_paySplit[i2];
+    return`<div style="display:flex;align-items:center;gap:7px;padding:4px 0;">
+      <div style="flex:1;min-width:0;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(it.name)} ×${it.qty}</div>
+      <div style="font-size:11.5px;font-weight:600;white-space:nowrap;">${fp(itemAmt(it))}</div>
+      <div style="display:flex;gap:3px;">${M.map(([m,ic])=>
+        `<button class="btn xs ${cur===m?(m==='cash'?'G':m==='card'?'B':'A'):''}" style="padding:2px 7px;${cur===m?'':'opacity:.45;'}" onclick="paySetItem(${i2},'${m}')">${ic}</button>`).join('')}</div>
+    </div>`;}).join('');
+  const sums=['cash','card','invoice'].map(m=>{
+    const tot=(w.items||[]).reduce((s2,it,i2)=>s2+(_paySplit[i2]===m?itemAmt(it):0),0);
+    return tot>0.001?`${m==='cash'?'💵':m==='card'?'💳':'🧾'} ${fp(tot)}`:null;
+  }).filter(Boolean);
+  $('pay-split-sum').innerHTML=`<span style="color:var(--t3);">Rozdelenie:</span> <strong>${sums.join('  ·  ')}</strong>`;
 }
 
 // ══ AGENCY PB PAYMENT ══
@@ -5266,10 +5402,19 @@ function confirmAgencyPay(){
 function confirmPay(){
   if(!payM)return;const wbs=getWbs();const w=wbs.find(w=>w.id===pendClose);if(!w)return;
   const s=getSess();const snapSid=curSid; // capture before any possible switch
+  // ✅ v4g: delenie po položkách + sprepitné
+  if(_paySplit){(w.items||[]).forEach((it,i2)=>{const m=_paySplit[i2];if(m&&m!==payM)it.payM=m;else delete it.payM;});}
+  else{(w.items||[]).forEach(it=>delete it.payM);}
+  if(_payTip>0.001){
+    // Sprepitné sa zadáva na termináli — ak je čokoľvek platené kartou, ide na kartu.
+    // Faktúra sprepitné nikdy nenesie (fakturuje sa len tovar) → padne na hotovosť.
+    const anyCard=_paySplit?Object.values(_paySplit).includes('card'):payM==='card';
+    w.tip={amt:Math.round(_payTip*100)/100,m:anyCard?'card':(payM==='invoice'?'cash':payM)};
+  }else delete w.tip;
   w.closedAt=new Date().toISOString();w.orderIdx=closed.filter(x=>x.sKey===actKey()).length;w.payM=payM;w.justClosed=true;w.sKey=actKey();w.sArena=s?.arena;w.sInstr=s?.instructor;w.sAct=s?.activity;w.sDate=s?.date;w.sTime=s?.time;if(s?.calRunNumber)w.sCalRunNumber=s.calRunNumber;
   closed.unshift(w);const newWbs=wbs.filter(x=>x.id!==pendClose);setWbs(newWbs);
   if(chkd.has(pendClose))chkd.delete(pendClose);if(selId===pendClose)selId=null;
-  auditLog('bill-close',w.name+' '+payM+' '+fp(billAmt(w)));
+  auditLog('bill-close',w.name+' '+wPayLabel(w)+' '+fp(billAmt(w))+(w.tip?' tip '+fp(w.tip.amt):''));
   if(w.email){const cust=findCustomerByEmail(w.email);if(!cust)addCustomer(w.name,w.email,'',false);}
   pendClose=null;cm('m-pay');save();rWbs();rBill();rPbt();rDrk();
   if($('p-open')?.classList.contains('on'))rOpen();   // ✅ inak zaplatený účet ostal visieť v „Otvorené"
@@ -5302,6 +5447,20 @@ function checkLastPlayerClosed(sid){
 // 1% tringelt ZRUŠENÝ. Každý inštruktor dostane plnú sumu (× počet inštruktorov).
 // Mesačné bonusy (20€ najväčšia tržba, 20€ recenzie, 20€ mesačný) sa riešia MANUÁLNE mimo pokladne.
 const REWARD={paintball:35,airsoft:35,agency:28,gelnerf:28,laser30:21,laser60:28};
+// Sprepitné za akciu, rozdelené medzi inštruktorov akcie rovnakým dielom.
+// Nie je to tržba ani odmena od firmy — sú to peniaze od zákazníka pre obsluhu.
+function sessTipTotal(sKey){
+  return closed.filter(w=>(w.sKey||'unknown')===sKey).reduce((s,w)=>s+wTipAmt(w),0);
+}
+function sessTipShare(sKey,name){
+  const tot=sessTipTotal(sKey);if(!tot)return 0;
+  const pouts=lPouts();const p=pouts[sKey];
+  let names=(p&&p.instructors&&p.instructors.length)?p.instructors:null;
+  if(!names){const sess=sessArr.find(x=>x.key===sKey);names=getSessionInstructors(sess);}
+  if(!names||!names.length){const b=closed.find(w=>(w.sKey||'unknown')===sKey);names=b&&b.sInstr?[b.sInstr]:[];}
+  if(!names.length||!names.includes(name))return 0;
+  return tot/names.length;
+}
 function rewardPerInstr(bills,sess){
   const list=bills||[];
   // Agentúra (balík Agentúra PB) — väčšina hráčov agentúrnych → 28€ (Paintball aj Airsoft agentúra)
@@ -6598,8 +6757,12 @@ function rSpravca(){
   const sTotalDep=sPopupDep+sDepProd;
   // ✅ Uplatnené darčekové poukazy za obdobie
   const sVouchTot=bills.reduce((s,w)=>s+wVoucherAmt(w),0);
+  // ✅ v4g: sprepitné — NIE je tržba, ale JE v zásuvke/na termináli a patrí inštruktorovi
+  const sTipTot=bills.reduce((s,w)=>s+wTipAmt(w),0);
+  const sTipCash=bills.reduce((s,w)=>s+wTipAmt(w,'cash'),0);
+  const sTipCard=bills.reduce((s,w)=>s+wTipAmt(w,'card'),0);
   const srevEl=$('srev-s');
-  if(srevEl)srevEl.innerHTML=`<div class="rb"><div class="rbv" style="color:var(--grn);">${fp(tot)}</div><div class="rbl">Celkom</div></div>${sTotalDep>0?`<div class="rb" style="background:var(--gbg);border:.5px solid var(--gbd);"><div class="rbv" style="color:var(--grn);">${fp(sTotalDep)}</div><div class="rbl">💰 Zálohy</div></div><div class="rb" style="background:var(--abg);border:.5px solid var(--abd);"><div class="rbv" style="color:var(--amb);">${fp(cash-sTotalDep)}</div><div class="rbl">💵 Hotovosť po odpočítaní záloh</div></div>`:''}<div class="rb"><div class="rbv" style="color:var(--grn);">${fp(cash)}</div><div class="rbl">💵 Hotovosť</div></div><div class="rb"><div class="rbv" style="color:var(--blu);">${fp(card)}</div><div class="rbl">💳 Karta</div></div>${sVouchTot>0?`<div class="rb" style="background:var(--tbg);border:.5px solid var(--tbd);"><div class="rbv" style="color:var(--tel);">${fp(sVouchTot)}</div><div class="rbl">🎫 Poukazy uplatnené</div></div>`:''}${invPaid>0?`<div class="rb" style="background:var(--pbg);border:.5px solid var(--pbd);"><div class="rbv" style="color:var(--pur);">${fp(invPaid)}</div><div class="rbl">🧾 Faktúra uhradená</div></div>`:''} ${invUnpaid>0?`<div class="rb" style="background:var(--abg);border:.5px solid var(--abd);"><div class="rbv" style="color:var(--amb);">${fp(invUnpaid)}</div><div class="rbl">🧾 Faktúra neuhradená</div></div>`:''} ${(totPay+totCosts)>0?`<div class="rb" style="grid-column:1/-1;background:var(--abg);border:.5px solid var(--abd);"><div class="rbv" style="color:var(--amb);">${fp(cash-sTotalDep-totPay-totCosts)}</div><div class="rbl">💵 Čistá hotovosť (hotovosť − zálohy${sTotalDep>0?' '+fp(sTotalDep):''} − výplaty ${fp(totPay+totCosts)})</div></div>`:''}  `;
+  if(srevEl)srevEl.innerHTML=`<div class="rb"><div class="rbv" style="color:var(--grn);">${fp(tot)}</div><div class="rbl">Celkom</div></div>${sTotalDep>0?`<div class="rb" style="background:var(--gbg);border:.5px solid var(--gbd);"><div class="rbv" style="color:var(--grn);">${fp(sTotalDep)}</div><div class="rbl">💰 Zálohy</div></div><div class="rb" style="background:var(--abg);border:.5px solid var(--abd);"><div class="rbv" style="color:var(--amb);">${fp(cash-sTotalDep)}</div><div class="rbl">💵 Hotovosť po odpočítaní záloh</div></div>`:''}<div class="rb"><div class="rbv" style="color:var(--grn);">${fp(cash)}</div><div class="rbl">💵 Hotovosť</div></div><div class="rb"><div class="rbv" style="color:var(--blu);">${fp(card)}</div><div class="rbl">💳 Karta</div></div>${sVouchTot>0?`<div class="rb" style="background:var(--tbg);border:.5px solid var(--tbd);"><div class="rbv" style="color:var(--tel);">${fp(sVouchTot)}</div><div class="rbl">🎫 Poukazy uplatnené</div></div>`:''}${sTipTot>0?`<div class="rb" style="background:var(--gbg);border:.5px solid var(--gbd);"><div class="rbv" style="color:var(--grn);">${fp(sTipTot)}</div><div class="rbl">🎁 Sprepitné inštruktorom${sTipCash>0&&sTipCard>0?` (💵${fp(sTipCash)} · 💳${fp(sTipCard)})`:sTipCard>0?' 💳':' 💵'}</div></div>`:''}${invPaid>0?`<div class="rb" style="background:var(--pbg);border:.5px solid var(--pbd);"><div class="rbv" style="color:var(--pur);">${fp(invPaid)}</div><div class="rbl">🧾 Faktúra uhradená</div></div>`:''} ${invUnpaid>0?`<div class="rb" style="background:var(--abg);border:.5px solid var(--abd);"><div class="rbv" style="color:var(--amb);">${fp(invUnpaid)}</div><div class="rbl">🧾 Faktúra neuhradená</div></div>`:''} ${(totPay+totCosts)>0?`<div class="rb" style="grid-column:1/-1;background:var(--abg);border:.5px solid var(--abd);"><div class="rbv" style="color:var(--amb);">${fp(cash-sTotalDep-totPay-totCosts-sTipCash)}</div><div class="rbl">💵 Čistá hotovosť (hotovosť − zálohy${sTotalDep>0?' '+fp(sTotalDep):''} − výplaty ${fp(totPay+totCosts)}${sTipCash>0?' − sprepitné '+fp(sTipCash):''})</div></div>`:''}  `;
 
   // ✅ Zoznam problémových zákazníkov (no-show) presunutý do Nastavenia → Zákazníci.
   //    V Správcovi nepatril: nesúvisí s tržbami a ignoroval časový filter obdobia.
@@ -6804,6 +6967,7 @@ function rMoje(){
   const myCash=myBills.reduce((s,w)=>s+wCashAmt(w)+wInvoiceAmt(w),0);
   const myCard=myBills.reduce((s,w)=>s+wCardAmt(w),0);
   const myPayout=skeys.reduce((s,k)=>s+_myShare(k),0);
+  const myTips=skeys.reduce((s,k)=>s+sessTipShare(k,myName),0);   // ✅ sprepitné patrí inštruktorovi
   let html=`
     <div class="card" style="border-color:var(--gbd);">
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">👋 ${escHtml(myName)} — posledných 30 dní</div>
@@ -6813,6 +6977,8 @@ function rMoje(){
         <div class="rb"><div class="rbv" style="color:var(--grn);">${fp(myCash)}</div><div class="rbl">💵 Hotovosť</div></div>
         <div class="rb"><div class="rbv" style="color:var(--blu);">${fp(myCard)}</div><div class="rbl">💳 Karta</div></div>
         ${myPayout>0?`<div class="rb" style="grid-column:1/-1;background:var(--abg);border:.5px solid var(--abd);"><div class="rbv" style="color:var(--amb);">${fp(myPayout)}</div><div class="rbl">💰 Odmena celkom</div></div>`:''}
+        ${myTips>0?`<div class="rb" style="grid-column:1/-1;background:var(--gbg);border:.5px solid var(--gbd);"><div class="rbv" style="color:var(--grn);">${fp(myTips)}</div><div class="rbl">🎁 Sprepitné od zákazníkov</div></div>
+        <div class="rb" style="grid-column:1/-1;"><div class="rbv" style="color:var(--t1);">${fp(myPayout+myTips)}</div><div class="rbl">Spolu (odmena + sprepitné)</div></div>`:''}
       </div>
     </div>`;
   skeys.forEach((key,gi)=>{
@@ -6838,6 +7004,7 @@ function rMoje(){
           <div class="game-stat"><div class="game-stat-v">${grp.length}</div><div class="game-stat-l">${t('players-added')}</div></div>
           <div class="game-stat"><div class="game-stat-v" style="color:var(--grn);">${fp(grpCash)}</div><div class="game-stat-l">💵</div></div>
           <div class="game-stat"><div class="game-stat-v" style="color:var(--blu);">${fp(grpCard)}</div><div class="game-stat-l">💳</div></div>
+          ${sessTipShare(key,myName)>0?`<div class="game-stat"><div class="game-stat-v" style="color:var(--grn);">${fp(sessTipShare(key,myName))}</div><div class="game-stat-l">🎁</div></div>`:''}
           ${pout?`<div class="game-stat"><div class="game-stat-v" style="color:var(--amb);">${fp(_myShare(key))}</div><div class="game-stat-l">${(pout.instructors&&pout.instructors.length>1)?'moja odmena':'odmena'}</div></div>`:''}
         </div>
         <button class="btn sm B" onclick="event.stopPropagation();openNote('${key}')" style="margin-left:8px;flex-shrink:0;">📝</button>
@@ -7447,10 +7614,10 @@ async function exportXLS(key){
     ),
     [''],
     ['ZÁKAZNÍCI — PREHĽAD','',''],
-    ['#','Meno','Platba','Guličky distribuované','Guličky vystrelené','Zostatok','Nápoje','Suma (€)'],
+    ['#','Meno','Platba','Guličky distribuované','Guličky vystrelené','Zostatok','Nápoje','Suma (€)','Sprepitné (€)'],
     ...gbSorted.map((w,i)=>{
       const tb=totBalls(w);const sh=Math.min(w.bUsed||0,tb);
-      return[i+1,w.name,wPayLabel(w),tb,sh,tb-sh,(w.dG||[]).join(', '),parseFloat(billAmt(w).toFixed(2))];
+      return[i+1,w.name,wPayLabel(w),tb,sh,tb-sh,(w.dG||[]).join(', '),parseFloat(billAmt(w).toFixed(2)),parseFloat(wTipAmt(w).toFixed(2))];
     }),
     ['','','','','','','CELKOM',parseFloat(tot.toFixed(2))],
     ['','','','','','','Hotovosť',parseFloat(totC.toFixed(2))],
@@ -7588,17 +7755,18 @@ function exportSPeriod(){
     ['Počet účtov',bills.length],
     [''],
     ['VŠETKY ÚČTY','','','','','','','',''],
-    ['#','Zákazník','Dátum','Čas','Akcia','Inštruktor','Platba','Guličky','Nápoje','Celkom (€)'],
+    ['#','Zákazník','Dátum','Čas','Akcia','Inštruktor','Platba','Guličky','Nápoje','Celkom (€)','Sprepitné (€)'],
     ...bills.map((w,i)=>[i+1,w.name,fD(w.closedAt),fT(w.closedAt),
       (w.sArena||'—')+' – '+(w.sAct||'—'),w.sInstr||'—',
-      w.payM==='card'?'Karta':w.payM==='invoice'?'Faktúra':'Hotovosť',
+      wPayLabel(w),
       Math.min(w.bUsed||0,totBalls(w)),
       Object.entries(buildDrinkStats([w])).map(([k,v])=>k+':'+v).join(', '),
-      parseFloat(billAmt(w).toFixed(2))]),
-    ['','','','','','','','','CELKOM',parseFloat(tot.toFixed(2))],
+      parseFloat(billAmt(w).toFixed(2)),
+      parseFloat(wTipAmt(w).toFixed(2))]),
+    ['','','','','','','','','CELKOM',parseFloat(tot.toFixed(2)),parseFloat(bills.reduce((a,w)=>a+wTipAmt(w),0).toFixed(2))],
   ];
   const ws=XLSX.utils.aoa_to_sheet(sum);
-  ws['!cols']=[{wch:4},{wch:16},{wch:12},{wch:8},{wch:24},{wch:16},{wch:10},{wch:8},{wch:18},{wch:12}];
+  ws['!cols']=[{wch:4},{wch:16},{wch:12},{wch:8},{wch:24},{wch:16},{wch:22},{wch:8},{wch:18},{wch:12},{wch:13}];
   XLSX.utils.book_append_sheet(wb,ws,'Súhrn');
   const safeName=s=>(s||'').replace(/[^\w]/g,'-').replace(/-+/g,'-');
   XLSX.writeFile(wb,`ProPaintball_export_${safeName(sFFrom?fD(sFFrom.toISOString()):'vsetko')}.xlsx`);
