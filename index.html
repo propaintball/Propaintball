@@ -73,11 +73,11 @@ button,input,select,textarea{font-family:inherit;}
 .ss::-webkit-scrollbar{display:none;}
 .spill{padding:5px 11px;border-radius:99px;border:.5px solid var(--b2);font-size:11px;font-weight:600;background:var(--bg3);color:var(--t2);cursor:pointer;white-space:nowrap;flex-shrink:0;}
 .spill.cur{background:var(--rbg);color:var(--red);border-color:var(--rbd);}
-.msb-item{display:inline-flex;flex-direction:column;align-items:flex-start;padding:8px 14px;border-radius:var(--rs);border:1.5px solid var(--b2);background:var(--bg2);cursor:pointer;min-width:140px;max-width:200px;transition:all .2s;}
+.msb-item{display:inline-flex;flex-direction:column;align-items:flex-start;padding:8px 14px;border-radius:var(--rs);border:1.5px solid var(--b2);background:var(--bg2);cursor:pointer;min-width:140px;max-width:230px;transition:all .2s;}
 .msb-item.active{border-color:var(--rbd);background:var(--rbg);}
 .msb-item:hover{border-color:var(--amb);transform:translateY(-1px);}
 .msb-item .msb-name{font-size:12px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
-.msb-item .msb-meta{font-size:9px;color:var(--t3);margin-top:2px;}
+.msb-item .msb-meta{font-size:9px;color:var(--t3);margin-top:2px;white-space:nowrap;}
 .msb-item .msb-stats{display:flex;gap:6px;margin-top:3px;font-size:10px;font-weight:600;}
 label.lb{display:block;font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
 input[type=text],input[type=number],input[type=date],input[type=time],input[type=password],input[type=email],input[type=tel],select,textarea{width:100%;background:var(--bg3);border:.5px solid var(--b2);border-radius:var(--rs);padding:8px 10px;font-size:13px;color:var(--t1);outline:none;-webkit-appearance:none;}
@@ -1483,7 +1483,7 @@ function saveAll(){
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.08.18c';
+const APP_VERSION='2026.08.18e';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -3095,15 +3095,22 @@ async function bkReminder(){
   const st=(await bkStateLoad())||{};
   const tsOf=v=>v&&v.ts?new Date(v.ts).getTime():0;
   const lastOff=Math.max(tsOf(st.lastFile),tsOf(st.lastDrive),LS.g('pb_last_export',0),LS.g('pb_last_offdev',0));
-  const days=lastOff?Math.floor((Date.now()-lastOff)/86400000):999;
+  // ⚠️ OPRAVA: predtým sa pri chýbajúcom zázname počítalo days=999 → hneď po inštalácii
+  //    svietil ČERVENÝ poplach, hoci sa nič nestalo a cloud bežal. Nová inštalácia
+  //    (alebo upgrade zo staršej verzie, ktorá export nesledovala) teraz začína na nule
+  //    a odpočítava sa od prvého spustenia, nie od „nikdy".
+  let since=LS.g('pb_offdev_since',0);
+  if(!since){since=Date.now();LS.s('pb_offdev_since',since);}
+  const ref=lastOff||since;
+  const days=Math.floor((Date.now()-ref)/86400000);
   if(days<31){el.style.display='none';return;}
   const hard=days>93;
   el.style.display='block';
   el.innerHTML=`<div onclick="_call('openBackups')" style="cursor:pointer;background:${hard?'var(--rbg)':'var(--abg)'};border:1px solid ${hard?'var(--rbd)':'var(--abd)'};border-radius:var(--rs);padding:10px 13px;display:flex;align-items:center;gap:10px;">
     <div style="font-size:18px;">${hard?'❗':'⚠️'}</div>
     <div style="flex:1;min-width:0;">
-      <div style="font-size:12px;font-weight:700;color:${hard?'var(--red)':'var(--amb)'};">${lastOff?`Nezávislá kópia má ${days} dní`:'Chýba nezávislá kópia dát'}</div>
-      <div style="font-size:10.5px;color:var(--t3);">Cloud beží, ale poistka pre prípad jeho zlyhania chýba. Klepni sem.</div>
+      <div style="font-size:12px;font-weight:700;color:${hard?'var(--red)':'var(--amb)'};">${lastOff?`Nezávislá kópia má ${days} dní`:'Odporúčame stiahnuť zálohu do súboru'}</div>
+      <div style="font-size:10.5px;color:var(--t3);">Dáta sú v poriadku a v cloude. Toto je len poistka navyše, ak by zlyhal Supabase.</div>
     </div>
     <div style="font-size:16px;color:var(--t3);">›</div>
   </div>`;
@@ -3865,10 +3872,17 @@ function rAppSessBar(){
         const totalRev=closed.filter(w=>w.sKey===s.key).reduce((sum,w)=>sum+billAmt(w),0);
         const elapsed=s.startedAt?Math.round((Date.now()-new Date(s.startedAt).getTime())/60000):0;
         const elapsedStr=elapsed>0?Math.floor(elapsed/60)+'h'+String(elapsed%60).padStart(2,'0')+'m':'';
+        // ✅ Akcia visí viac než 24 h → ukáž, KEDY sa otvorila. Bez dátumu sa nedá
+        //    dohľadať, ku ktorej rezervácii patrí. Ako čas otvorenia berieme reálny
+        //    `startedAt`; ak chýba (staršie záznamy), zoberieme prvého otvoreného hráča.
+        const _firstOpen=wbs.map(w=>w.openedAt).filter(Boolean).sort()[0];
+        const _openedAt=s.startedAt||_firstOpen||(s.date?s.date+'T'+(s.time||'00:00'):null);
+        const staleStr=(elapsed>1440&&_openedAt)?fDT(new Date(_openedAt).toISOString()):'';
         const actColor=s.activity?.toLowerCase().includes('airsoft')?'var(--grn)':s.activity?.toLowerCase().includes('laser')?'var(--tel)':s.activity?.toLowerCase().includes('gel')?'var(--blu)':'var(--red)';
         return`<div class="msb-item ${isCur?'active':''}" onclick="swSess('${s.key}')">
           <div class="msb-name">${escHtml(s.arena||'—')} <span style="color:${actColor};">· ${escHtml(s.activity||'—')}</span>${sessRunSuffix(s)?`<span style="color:var(--amb);font-size:10px;">${sessRunSuffix(s)}</span>`:''}</div>
           <div class="msb-meta">👤 ${instrArr.map(n=>n.split(' ')[0]).join(' + ')} ${elapsedStr?'· ⏱'+elapsedStr:''}</div>
+          ${staleStr?`<div class="msb-meta" style="color:var(--amb);font-weight:600;">⚠️ otvorená ${staleStr}</div>`:''}
           <div class="msb-stats">
             <span style="color:var(--grn);">👥${activePlayers}</span>
             <span style="color:var(--pur);">✓${closedCount}</span>
