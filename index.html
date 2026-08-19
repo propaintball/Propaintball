@@ -278,6 +278,7 @@ textarea{resize:none;line-height:1.5;}
     <img src="https://www.propaintball.sk/wp-content/themes/propaintball/img/propaintball-logo-negative.svg" alt="ProPaintball" style="height:50px;margin-bottom:8px;" onerror="this.style.display='none'"/>
     <div style="font-size:12px;color:var(--t3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px;" data-i18n="sys-title">Pokladničný systém</div>
     <div id="app-version-lbl" style="font-size:10px;color:var(--t3);opacity:.6;margin-bottom:4px;"></div>
+    <div id="bk-reminder" style="display:none;max-width:420px;margin:10px auto 0;"></div>
     <!-- User badge -->
     <div id="landing-user" style="display:none;margin-top:8px;display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;">
       <div style="background:var(--gbg);border:.5px solid var(--gbd);border-radius:99px;padding:5px 14px;font-size:12px;color:var(--grn);display:inline-flex;align-items:center;gap:6px;">
@@ -752,6 +753,23 @@ textarea{resize:none;line-height:1.5;}
           </details>
           <div class="fr"><label class="lb">Project URL</label><input type="text" id="sb-u" placeholder="https://xxx.supabase.co" style="font-size:12px;"/></div>
           <div class="fr"><label class="lb">Anon Key</label><input type="text" id="sb-k" placeholder="eyJhbGciOiJIUzI1NiIsInR5..." style="font-size:12px;"/></div>
+          <!-- Prihlásenie zariadenia — nutné, keď je na pb_data zapnuté RLS (fáza 2) -->
+          <div style="background:var(--bg3);border-radius:var(--rs);padding:9px 11px;margin:8px 0;">
+            <div style="font-size:11px;font-weight:700;color:var(--t1);margin-bottom:6px;">🔐 Prihlásenie zariadenia</div>
+            <div id="sb-auth-st" style="font-size:11px;margin-bottom:7px;"></div>
+            <div id="sb-auth-form">
+              <div class="fr" style="margin-bottom:5px;"><input type="email" id="sb-auth-mail" placeholder="pokladna@propaintball.sk" autocomplete="off" style="font-size:12px;"/></div>
+              <div class="fr" style="margin-bottom:6px;"><input type="password" id="sb-auth-pw" placeholder="heslo zariadenia" autocomplete="off" style="font-size:12px;"/></div>
+              <button class="btn sm G" onclick="sbDoLogin()">Prihlásiť zariadenie</button>
+            </div>
+            <button class="btn sm" id="sb-auth-out" style="display:none;" onclick="sbDoLogout()">Odhlásiť</button>
+            <div style="font-size:9.5px;color:var(--t3);margin-top:6px;line-height:1.5;">
+              Potrebné až keď na <code>pb_data</code> zapneš RLS (viď <code>supabase-pb_data-rls.sql</code>).
+              Dovtedy nechaj prázdne — appka funguje s anon kľúčom.
+            </div>
+          </div>
+          <button class="btn sm" style="margin-bottom:8px;" onclick="sbSecurityCheck()">🛡 Skontrolovať zabezpečenie</button>
+          <div id="sb-sec-res" style="font-size:11px;line-height:1.6;margin-bottom:8px;"></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn sm B" onclick="sbSave()">💾 Uložiť</button>
             <button class="btn sm G" onclick="sbPush()">↑ Push (odoslať)</button>
@@ -903,9 +921,13 @@ textarea{resize:none;line-height:1.5;}
 
   <!-- PRIMÁRNA AKCIA: súborová záloha mimo zariadenia -->
   <button class="btn G" style="font-size:14px;padding:12px;" onclick="bkExportJSON()">⬇ Stiahnuť zálohu do súboru</button>
-  <div style="font-size:10px;color:var(--t3);margin:5px 0 12px;text-align:center;">
-    Jediná záloha, ktorá prežije stratu či reset iPadu. Ulož ju do iCloud / e-mailom sebe.
+  <div style="font-size:10px;color:var(--t3);margin:5px 0 8px;text-align:center;">
+    Nezávislá kópia mimo Supabase. Cloud ťa chráni pri strate iPadu — toto pri zlyhaní cloudu.
   </div>
+  <label style="display:flex;align-items:center;gap:7px;justify-content:center;font-size:10.5px;color:var(--t3);margin-bottom:12px;cursor:pointer;">
+    <input type="checkbox" id="bk-nopii" style="accent-color:var(--grn);width:15px;height:15px;">
+    Vynechať osobné údaje zákazníkov (GDPR) — účty a tržby ostanú
+  </label>
 
   <div style="display:flex;gap:0;margin-bottom:12px;border-radius:var(--rs);overflow:hidden;border:.5px solid var(--b2);">
     <button class="nfc-opt on" id="bk-tab-restore" onclick="bkTab('restore')">↩ Obnoviť</button>
@@ -941,7 +963,17 @@ textarea{resize:none;line-height:1.5;}
       <button class="btn sm G" onclick="bkCreateLocal()">💾 Záloha v zariadení</button>
       <button class="btn sm B" onclick="bkCreate()">☁ Záloha do cloudu</button>
     </div>
-    <div id="bk-adv-info" style="font-size:11px;color:var(--t2);background:var(--bg3);padding:9px 12px;border-radius:var(--rs);line-height:1.7;"></div>
+    <div id="bk-adv-info" style="font-size:11px;color:var(--t2);background:var(--bg3);padding:9px 12px;border-radius:var(--rs);line-height:1.7;margin-bottom:10px;"></div>
+    <!-- Skutočná zvyšná diera pri strate VŠETKÝCH zariadení: bez týchto údajov sa k cloudu nedostaneš -->
+    <div style="background:var(--abg);border:.5px solid var(--abd);border-radius:var(--rs);padding:9px 12px;">
+      <div style="font-size:11px;font-weight:700;color:var(--amb);margin-bottom:5px;">🔑 Obnova na novom zariadení</div>
+      <div style="font-size:10.5px;color:var(--t2);line-height:1.6;margin-bottom:7px;">
+        Na novom iPade stačí zadať tieto dva údaje a dať <strong>↓ Pull</strong> — história sa stiahne z cloudu.
+        Bez nich sa k dátam nedostaneš, aj keď v cloude sú. <strong>Ulož si ich do správcu hesiel</strong>, nie do zálohy.
+      </div>
+      <div id="bk-recovery" style="font-size:10px;font-family:ui-monospace,monospace;color:var(--t3);word-break:break-all;background:var(--bg2);padding:7px 9px;border-radius:var(--rs);"></div>
+      <button class="btn sm" style="margin-top:7px;" onclick="bkCopyRecovery()">📋 Skopírovať údaje</button>
+    </div>
   </div>
 
   <button class="btn" style="margin-top:10px;" onclick="cm('m-backup')" data-i18n="close">Zavrieť</button>
@@ -954,10 +986,11 @@ textarea{resize:none;line-height:1.5;}
     🛟 Pred obnovou sa automaticky vytvorí záloha AKTUÁLNEHO stavu — obnovu vieš vrátiť späť.
   </div>
   <div id="m-rc-typebox" style="margin-bottom:10px;">
-    <label class="lb" style="font-size:11px;">Potvrď napísaním <strong style="color:var(--red);">OBNOVIT</strong>:</label>
+    <label class="lb" style="font-size:11px;">Nahradenie všetkého potvrď napísaním <strong style="color:var(--red);">OBNOVIT</strong>:</label>
     <input type="text" id="rc-type" autocomplete="off" autocapitalize="characters" placeholder="OBNOVIT" oninput="rcCheck()"/>
   </div>
-  <div class="r2"><button class="btn R" id="rc-go" onclick="confirmRestore()" disabled style="opacity:.4;">✓ Obnoviť</button><button class="btn" onclick="cm('m-restore-confirm')" data-i18n="cancel">Zrušiť</button></div>
+  <button class="btn G" id="rc-merge" style="margin-bottom:8px;" onclick="confirmMerge()">➕ Len doplniť chýbajúce (nič sa nestratí)</button>
+  <div class="r2"><button class="btn R" id="rc-go" onclick="confirmRestore()" disabled style="opacity:.4;">⚠️ Nahradiť všetko</button><button class="btn" onclick="cm('m-restore-confirm')" data-i18n="cancel">Zrušiť</button></div>
 </div></div>
 <!-- MODALS -->
 <div class="mw" id="m-pay"><div class="mb"><div class="mt">💳 Spôsob platby</div><div id="pay-prev" style="margin-bottom:12px;font-size:12px;"></div><div id="pay-sync" style="font-size:10px;margin:-6px 0 10px;min-height:13px;"></div><div class="pt" style="grid-template-columns:1fr 1fr 1fr;"><div class="po" id="po-c" onclick="selPay('cash')"><div class="poi">💵</div><div class="pol">Hotovosť</div></div><div class="po" id="po-k" onclick="selPay('card')"><div class="poi">💳</div><div class="pol">Karta</div></div><div class="po" id="po-f" onclick="selPay('invoice')"><div class="poi">🧾</div><div class="pol">Faktúra</div></div></div><button class="btn G" id="pay-btn" onclick="confirmPay()" disabled style="opacity:.4;">Potvrdiť platbu</button><button class="btn" style="margin-top:7px;" onclick="cm('m-pay')" data-i18n="cancel">Zrušiť</button></div></div>
@@ -1221,6 +1254,26 @@ const IDB=(()=>{
   };
 })();
 
+// ── Kontrolný súčet zálohy (SHA-256) ──
+// Bez neho sa poškodená záloha prejaví až pri obnove, keď je neskoro.
+// Súčet sa počíta z payloadu BEZ poľa `_sum`, aby bol overiteľný.
+async function pbChecksum(obj){
+  if(!crypto?.subtle)return null;
+  const clone={...obj};delete clone._sum;
+  const json=JSON.stringify(clone);
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(json));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function pbStamp(obj){
+  try{const sum=await pbChecksum(obj);if(sum)obj._sum=sum;}catch(e){console.warn('[Backup] checksum failed',e);}
+  return obj;
+}
+// Vracia: 'ok' | 'bad' (nesedí → poškodená) | 'none' (staršia záloha bez súčtu)
+async function pbVerify(obj){
+  if(!obj||!obj._sum)return'none';
+  try{return await pbChecksum(obj)===obj._sum?'ok':'bad';}catch(e){return'none';}
+}
+
 // ── Kompresia záloh (gzip cez CompressionStream, fallback = surové JSON) ──
 async function pbGzip(obj){
   const json=JSON.stringify(obj);
@@ -1319,7 +1372,7 @@ const PBS=(()=>{
     const lsClosed=LS.g('pb_cl',[]);
     // 1) poistná záloha predmigračného stavu priamo v IDB (prežije aj neúspešnú migráciu)
     try{
-      const snap=await pbGzip(plBuild());
+      const snap=await pbGzip(await pbStamp(plBuild()));
       await IDB.put('backups',{id:'pre_idb_migration',ts:new Date().toISOString(),type:'pre-migration',
         label:'Pred prechodom na IndexedDB',bills:lsClosed.length,sessions:sessArr.length,...snap});
     }catch(e){console.error('[PBS] poistná záloha zlyhala',e);throw e;}
@@ -1430,7 +1483,7 @@ function saveAll(){
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.08.17c';
+const APP_VERSION='2026.08.18c';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1457,10 +1510,12 @@ function buildIUsers(){
     return{name:nm,pw:customPws[nm]||defaultPw,role:'instructor'};
   });
 }
-function loginUser(nm,pw){
-  if((nm==='Admin'||nm==='')&&checkPw(pw,admPw)){admPw=hashAndMigratePw(pw,admPw);save();currentUser={name:'Admin',role:'admin'};LS.s('pb_user',currentUser);_loginAttempts=0;_loginLockUntil=0;return true;}
-  const u=buildIUsers().find(x=>x.name===nm&&checkPw(pw,x.pw));
-  if(u){const customPws=LS.g('pb_custom_pws',{});if(customPws[u.name]){customPws[u.name]=hashAndMigratePw(pw,customPws[u.name]);LS.s('pb_custom_pws',customPws);}currentUser={name:u.name,role:'instructor'};LS.s('pb_user',currentUser);_loginAttempts=0;_loginLockUntil=0;return true;}
+async function loginUser(nm,pw){
+  if((nm==='Admin'||nm==='')&&await checkPw(pw,admPw)){admPw=await upgradePw(pw,admPw);save();currentUser={name:'Admin',role:'admin'};LS.s('pb_user',currentUser);_loginAttempts=0;_loginLockUntil=0;return true;}
+  // ⚠️ .find() s async predikátom by vrátilo Promise (vždy truthy) → nikdy nie .find()
+  let u=null;
+  for(const x of buildIUsers()){if(x.name===nm&&await checkPw(pw,x.pw)){u=x;break;}}
+  if(u){const customPws=LS.g('pb_custom_pws',{});if(customPws[u.name]){customPws[u.name]=await upgradePw(pw,customPws[u.name]);LS.s('pb_custom_pws',customPws);}currentUser={name:u.name,role:'instructor'};LS.s('pb_user',currentUser);_loginAttempts=0;_loginLockUntil=0;return true;}
   return false;
 }
 function logoutUser(){
@@ -1575,12 +1630,12 @@ function reopenWholeSession(key){
   toast((currentLang==='en'?`🔄 Game revived — ${bills.length} players open. Edit and close again.`:`🔄 Akcia oživená — ${bills.length} hráčov otvorených. Uprav a znova uzavri.`));
 }
 // ✅ Admin: natrvalo zmazať uzavretý účet (napr. duplikát z chyby) — s heslom a auditom
-function adminDeleteBill(id){
+async function adminDeleteBill(id){
   if(!isAdmin()){toast('Len admin môže mazať účty');return;}
   const w=closed.find(c=>c.id===id);if(!w){toast('Účet nenájdený');return;}
   const pw=prompt('🗑 ZMAZAŤ ÚČET\n\nHráč: '+w.name+'\nSuma: '+fp(totalAmt(w))+'\nPlatba: '+wPayLabel(w)+'\n\nToto natrvalo odstráni účet z tržieb a štatistík.\nPouži len pri duplicite / chybe.\n\nZadaj admin heslo:');
   if(pw===null)return;
-  if(!checkPw(pw,admPw)){toast('❌ Nesprávne heslo');return;}
+  if(!await checkPw(pw,admPw)){toast('❌ Nesprávne heslo');return;}
   auditLog('admin-delete-bill',w.name+' | '+id+' | '+fp(totalAmt(w))+' | '+(w.payM||''));
   closed=closed.filter(c=>c.id!==id);
   // Ak bola k tomuto hráčovi priradená popup-záloha, upozorni (netreba mazať automaticky)
@@ -1670,18 +1725,83 @@ function wPayLabel(w){
   return w.payM==='card'?'Karta':w.payM==='invoice'?'Faktúra':'Hotovosť';
 }
 function fp(v){return'€'+(+v).toFixed(2);}
+// Druhá vrstva obrany: mená z VEREJNÉHO webu (pb_event_signups) a z Google Kalendára
+// sú cudzí vstup. Escapovanie pri renderi je primárna obrana; toto je poistka pre prípad,
+// že niekde v budúcnosti vznikne nový render bez escHtml.
+function sanName(v,max){
+  return String(v==null?'':v).replace(/[<>&"'`\\]/g,'').replace(/[\u0000-\u001F\u007F]/g,'').trim().slice(0,max||60);
+}
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+// ══ HESLÁ ══
+// Do v4d sa používal `simpleHash` — 32-bitový súčet, ktorý sa dá zlomiť hrubou silou
+// za sekundy. Teraz PBKDF2-SHA256 so 150 000 iteráciami a náhodnou soľou pre každé heslo.
+// Formáty, ktoré vieme overiť:
+//   p2_<sol>_<hash>  … aktuálny (PBKDF2)
+//   h_<...>          … starý simpleHash (pri úspešnom prihlásení sa automaticky povýši)
+//   čokoľvek iné     … heslo v čistom texte (najstaršie inštalácie)
+const PW_ITER=150000;
+function _b64(buf){let s='';const a=new Uint8Array(buf);for(let i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s);}
+function _unb64(str){const b=atob(str);const a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a;}
 function simpleHash(str){let h=0;for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i);h|=0;}return 'h_'+Math.abs(h).toString(36);}
-function checkPw(input,stored){if(stored.startsWith('h_'))return simpleHash(input)===stored;return input===stored;}
-function hashAndMigratePw(input,stored){if(!stored.startsWith('h_')){return simpleHash(input);}return stored;}
+async function _pbkdf2(pw,salt){
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveBits']);
+  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:PW_ITER,hash:'SHA-256'},key,256);
+  return _b64(bits);
+}
+async function hashPw(pw){
+  if(!crypto?.subtle)return simpleHash(pw); // veľmi starý prehliadač — radšej starý formát než pád
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  return 'p2_'+_b64(salt)+'_'+await _pbkdf2(pw,salt);
+}
+async function checkPw(input,stored){
+  if(stored==null)return false;
+  stored=String(stored);
+  if(stored.startsWith('p2_')){
+    const parts=stored.split('_');
+    if(parts.length!==3)return false;
+    try{return await _pbkdf2(input,_unb64(parts[1]))===parts[2];}catch(e){return false;}
+  }
+  if(stored.startsWith('h_'))return simpleHash(input)===stored;
+  return input===stored;
+}
+// Po úspešnom prihlásení povýš starý formát na PBKDF2
+async function upgradePw(input,stored){
+  if(String(stored||'').startsWith('p2_'))return stored;
+  return await hashPw(input);
+}
+// ── 9) AUDITNÝ LOG ──
+// Do v4d bol len lokálny, capped na 500 a zmizol spolu s úložiskom — pri spore
+// o tržbu z neho nezostalo nič. Teraz sa dávkovo odosiela aj do cloudu
+// (jeden riadok na zariadenie a deň), takže záznam prežije aj stratu iPadu.
+let _auditQueue=[],_auditT=null;
 function auditLog(action,detail){
+  const e={t:new Date().toISOString(),u:currentUser?.name||'anon',a:action,d:String(detail||'').slice(0,300),dev:_deviceTag()};
   try{
     const log=JSON.parse(localStorage.getItem('pb_audit')||'[]');
-    log.push({t:new Date().toISOString(),u:currentUser?.name||'anon',a:action,d:detail||''});
-    if(log.length>500)log.splice(0,log.length-500);
+    log.push(e);
+    if(log.length>1000)log.splice(0,log.length-1000);
     localStorage.setItem('pb_audit',JSON.stringify(log));
-  }catch(e){}
+  }catch(err){}
+  _auditQueue.push(e);
+  clearTimeout(_auditT);
+  _auditT=setTimeout(auditFlush,15000);   // dávkovo, nech to nezaťažuje sieť
 }
+async function auditFlush(){
+  if(!_auditQueue.length||!sbUrl||!sbKey||!navigator.onLine)return;
+  const batch=_auditQueue.splice(0,_auditQueue.length);
+  const id='audit_'+_deviceTag()+'_'+new Date().toISOString().slice(0,10);
+  try{
+    // Prečítaj existujúci denný riadok a doplň — riadok sa nikdy neprepíše naprázdno
+    const r=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${encodeURIComponent(id)}&select=payload`,{headers:sbH()});
+    let prev=[];
+    if(r.ok){const rows=await r.json();if(rows.length&&Array.isArray(rows[0].payload?.log))prev=rows[0].payload.log;}
+    const merged=prev.concat(batch).slice(-3000);
+    const w=await fetch(`${sbUrl}/rest/v1/pb_data`,{method:'POST',headers:sbH({json:true,merge:true}),
+      body:JSON.stringify({id,payload:{log:merged,device:_deviceTag()},updated_at:new Date().toISOString(),backup_type:'audit',backup_label:'Audit '+id.slice(-10)})});
+    if(!w.ok)_auditQueue.unshift(...batch);   // neúspech → skús znova neskôr
+  }catch(e){_auditQueue.unshift(...batch);}
+}
+window.addEventListener('beforeunload',()=>{if(_auditQueue.length)auditFlush();});
 
 // Get ALL drinks for a wristband — package drinks (dG) + purchased drinks (items)
 function getAllDrinks(w){
@@ -1788,7 +1908,7 @@ async function pushCustomerToCloud(c){
   try{
     await fetch(`${sbUrl}/rest/v1/pb_data`,{
       method:'POST',
-      headers:{'Content-Type':'application/json','apikey':sbKey,'Authorization':'Bearer '+sbKey,'Prefer':'resolution=merge-duplicates'},
+      headers:sbH({json:true,merge:true}),
       body:JSON.stringify({id:c.id,payload:c,backup_type:'customer',backup_label:'Registrácia: '+c.name,updated_at:new Date().toISOString()})
     });
   }catch(e){console.error('[Customer push]',e);}
@@ -1871,13 +1991,13 @@ async function syncCustomers(){
       try{
         await fetch(`${sbUrl}/rest/v1/pb_data`,{
           method:'POST',
-          headers:{'Content-Type':'application/json','apikey':sbKey,'Authorization':'Bearer '+sbKey,'Prefer':'resolution=merge-duplicates'},
+          headers:sbH({json:true,merge:true}),
           body:JSON.stringify({id:c.id,payload:c,backup_type:'customer',backup_label:'Registrácia: '+c.name,updated_at:c.registeredAt||new Date().toISOString()})
         });
       }catch(e){}
     }
     // ✅ Pull remote customers and merge
-    const r=await fetch(`${sbUrl}/rest/v1/pb_data?backup_type=eq.customer&order=updated_at.desc`,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
+    const r=await fetch(`${sbUrl}/rest/v1/pb_data?backup_type=eq.customer&order=updated_at.desc`,{headers:sbH()});
     if(r.ok){
       const rows=await r.json();
       const remote=rows.map(r=>r.payload).filter(p=>p&&p.email);
@@ -1939,12 +2059,70 @@ function deleteCust(){
   // ✅ Delete from Supabase too
   if(delCust&&delCust.id&&sbUrl&&sbKey){
     fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${encodeURIComponent(delCust.id)}`,{
-      method:'DELETE',headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
+      method:'DELETE',headers:sbH()
     }).catch(e=>console.error('[Customer delete]',e));
   }
   cm('m-cust-edit');renderCustList();toast(t('toast-cust-deleted'));markDirty();
 }
 // ══ SUPABASE ══
+// ══════════════════════════════════════════════════════════════════
+// SUPABASE PRÍSTUP  (v4d)
+//
+// Anon kľúč je na každom iPade a je čitateľný z Nastavení. Ak `pb_data` nemá RLS,
+// ktokoľvek s tým kľúčom prečíta a ZMAŽE celú históriu tržieb.
+//
+// Riešenie: zapni RLS (viď supabase-pb_data-rls.sql) a prihlás zariadenie cez
+// Supabase Auth. Potom sa všetky požiadavky posielajú s prístupovým tokenom
+// zariadenia — samotný anon kľúč prestane stačiť.
+//
+// Spätná kompatibilita: ak prihlásenie nie je nastavené, appka funguje ako doteraz
+// (anon kľúč). Nič sa nerozbije, kým RLS nezapneš.
+// ══════════════════════════════════════════════════════════════════
+let sbTok=LS.g('pb_sb_tok',null);          // {access,refresh,exp}
+function sbAuthed(){return !!(sbTok&&sbTok.access);}
+function sbH(o){
+  o=o||{};
+  const h={'apikey':sbKey,'Authorization':'Bearer '+((sbTok&&sbTok.access)||sbKey)};
+  if(o.json)h['Content-Type']='application/json';
+  if(o.merge)h['Prefer']='resolution=merge-duplicates';
+  if(o.range){h['Range-Unit']='items';h['Range']=o.range[0]+'-'+o.range[1];}
+  return h;
+}
+async function sbLogin(email,pw){
+  if(!sbUrl||!sbKey)return{ok:false,err:'Najprv nastav URL a kľúč'};
+  try{
+    const r=await fetch(`${sbUrl}/auth/v1/token?grant_type=password`,{
+      method:'POST',headers:{'Content-Type':'application/json','apikey':sbKey},
+      body:JSON.stringify({email,password:pw})});
+    const d=await r.json();
+    if(!r.ok||!d.access_token)return{ok:false,err:d.error_description||d.msg||d.error||'Prihlásenie zlyhalo'};
+    sbTok={access:d.access_token,refresh:d.refresh_token,exp:Date.now()+(d.expires_in||3600)*1000};
+    LS.s('pb_sb_tok',sbTok);
+    return{ok:true};
+  }catch(e){return{ok:false,err:'Sieťová chyba: '+e.message};}
+}
+async function sbRefreshTok(){
+  if(!sbTok||!sbTok.refresh)return false;
+  try{
+    const r=await fetch(`${sbUrl}/auth/v1/token?grant_type=refresh_token`,{
+      method:'POST',headers:{'Content-Type':'application/json','apikey':sbKey},
+      body:JSON.stringify({refresh_token:sbTok.refresh})});
+    const d=await r.json();
+    if(!r.ok||!d.access_token){console.warn('[sbAuth] refresh zlyhal');return false;}
+    sbTok={access:d.access_token,refresh:d.refresh_token||sbTok.refresh,exp:Date.now()+(d.expires_in||3600)*1000};
+    LS.s('pb_sb_tok',sbTok);
+    return true;
+  }catch(e){return false;}
+}
+function sbLogout(){sbTok=null;LS.s('pb_sb_tok',null);}
+// Token sa obnovuje 5 min pred vypršaním — offline sa nič nedeje, appka beží ďalej
+// z lokálnych dát a sync sa chytí, keď je sieť späť.
+async function sbEnsureTok(){
+  if(!sbAuthed())return;
+  if(Date.now()>sbTok.exp-300000&&navigator.onLine)await sbRefreshTok();
+}
+setInterval(()=>{if(sbUrl&&sbKey)sbEnsureTok();},10*60*1000);
+
 function sbSt(m,c='var(--t3)'){const e=$('sb-st');if(e)e.innerHTML=`<span style="color:${c};">${escHtml(m)}</span>`;}
 function dot(i,c){const e=$('sdot');if(e){e.textContent=i;e.style.color=c||'var(--t3)';}}
 
@@ -1955,18 +2133,65 @@ function dot(i,c){const e=$('sdot');if(e){e.textContent=i;e.style.color=c||'var(
 // Layer 3: JSON file download (manual/automatic export)
 // ══════════════════════════════════════════════════════════════════
 
-function plBuild(){
+function plBuild(opts){
   const notes=lNotes();const pouts=lPouts();const de=lDE();const deposits=lDeposits();
   const customPws=LS.g('pb_custom_pws',{});
   const customers=lCustomers();
   return{
     prods,wbMap,closed,nextId,nfcN,arenas,instructors,activities,
     sessArr,curSid,biz,hrRate,archive,notes,pouts,de,deposits,
-    admPw,customPws,customers,// ✅ sync passwords + customers across devices
-    version:3,
+    // ✅ v4d: admPw a customPws sa do zálohy UŽ NEDÁVAJÚ.
+    //    Záloha sa sťahuje do súboru a posiela mailom — heslá tam nepatria.
+    //    Medzi zariadeniami sa naďalej synchronizujú cez riadok `pb_settings`.
+    // ✅ v4d: osobné údaje zákazníkov (meno, e-mail, telefón) sa dajú vynechať — viď opts.noPII
+    customers: opts&&opts.noPII ? [] : customers,
+    piiStripped: !!(opts&&opts.noPII),
+    version:4,
     ts:Date.now(),
     appVersion:'2.0'
   };
+}
+// ── 7) OBNOVA ZLÚČENÍM ──
+// `plApply` dáta NAHRÁDZA. Pri havárii ale spravidla chceš vrátiť stratené účty
+// a NEPRÍSŤ o novšie. plMerge nič nemaže — len dopĺňa, čo lokálne chýba.
+function plMerge(d){
+  const res={bills:0,sessions:0,pouts:0,notes:0,deposits:0,customers:0};
+  const ids=new Set(closed.map(w=>w.id));
+  (d.closed||[]).forEach(b=>{
+    if(!b||!b.id||ids.has(b.id))return;
+    if(isTombstoned(b.sKey||'unknown'))return;   // nevzkriesiť vymazanú akciu
+    closed.push(b);ids.add(b.id);res.bills++;
+  });
+  const sk=new Set(sessArr.map(x=>x.key));
+  (d.sessArr||[]).forEach(x=>{
+    if(!x||!x.key||sk.has(x.key)||isTombstoned(x.key))return;
+    sessArr.push(x);sk.add(x.key);res.sessions++;
+  });
+  Object.entries(d.wbMap||{}).forEach(([k,arr])=>{
+    if(isTombstoned(k))return;
+    const cur=wbMap[k]||[];const have=new Set(cur.map(w=>w.id));
+    (arr||[]).forEach(w=>{if(w&&w.id&&!have.has(w.id)&&!ids.has(w.id)){cur.push(w);have.add(w.id);}});
+    wbMap[k]=cur;
+  });
+  // Mapy kľúčované na akciu — dopĺňame len chýbajúce kľúče, existujúce needitujeme
+  const fill=(load,save,src,cnt)=>{
+    const cur=load();let n=0;
+    Object.entries(src||{}).forEach(([k,v])=>{if(cur[k]===undefined&&!isTombstoned(k)){cur[k]=v;n++;}});
+    if(n)save(cur);res[cnt]=n;
+  };
+  fill(lPouts,sPouts,d.pouts,'pouts');
+  fill(lNotes,sNotes,d.notes,'notes');
+  fill(lDeposits,sDeposits,d.deposits,'deposits');
+  fill(lDE,sDE,d.de,'de');
+  if(Array.isArray(d.customers)){
+    const cur=lCustomers();const have=new Set(cur.map(c=>(c.email||'').toLowerCase()));
+    d.customers.forEach(c=>{const e=(c.email||'').toLowerCase();if(e&&!have.has(e)){cur.push(c);have.add(e);res.customers++;}});
+    if(res.customers)sCustomers(cur);
+  }
+  closed.sort((a,b)=>new Date(b.closedAt||0)-new Date(a.closedAt||0));
+  applyTombstones(lTombstones());
+  saveAll();
+  return res;
 }
 function plApply(d){
   if(d.prods){
@@ -1980,9 +2205,10 @@ function plApply(d){
   if(d.sessArr){sessArr=d.sessArr;sessArr.forEach(s=>{if(!s.instructors){s.instructors=s.instructor?[s.instructor]:[];}});}if(d.curSid)curSid=d.curSid;
   if(d.biz)biz=d.biz;if(d.hrRate)hrRate=d.hrRate;
   if(d.archive)archive=d.archive;
-  if(d.admPw)admPw=d.admPw;
-  // ✅ Restore synced passwords
-  if(d.customPws)LS.s('pb_custom_pws',d.customPws);
+  // ✅ v4d: heslá zo zálohy sa ZÁMERNE neobnovujú. Staršie zálohy ich ešte obsahujú,
+  //    ale obnovou by sa dalo vrátiť staré (prípadne kompromitované) heslo. Heslá
+  //    patria do `pb_settings`, ktoré sa synchronizuje samostatne.
+  if(d.admPw||d.customPws)console.log('[Restore] heslá zo zálohy ignorované (v4d)');
   if(d.notes)sNotes(d.notes);if(d.pouts)sPouts(d.pouts);if(d.de)sDE(d.de);if(d.deposits)sDeposits(d.deposits);
   // ✅ Restore customers — merge with existing to avoid losing data
   if(d.customers&&Array.isArray(d.customers)){
@@ -1995,6 +2221,79 @@ function plApply(d){
   // ✅ Nikdy nevzkriesiť vymazané akcie z legacy snapshotu
   applyTombstones(lTombstones());
   saveAll();
+}
+function sbAuthUI(){
+  const st=$('sb-auth-st'),f=$('sb-auth-form'),o=$('sb-auth-out');
+  if(!st)return;
+  if(sbAuthed()){
+    const mins=Math.round((sbTok.exp-Date.now())/60000);
+    st.innerHTML=`<span style="color:var(--grn);font-weight:700;">✅ Zariadenie prihlásené</span> <span style="color:var(--t3);">(token platný ${mins>0?mins+' min':'— obnoví sa'})</span>`;
+    if(f)f.style.display='none'; if(o)o.style.display='inline-flex';
+  }else{
+    st.innerHTML='<span style="color:var(--t3);">Neprihlásené — používa sa anon kľúč</span>';
+    if(f)f.style.display='block'; if(o)o.style.display='none';
+  }
+}
+async function sbDoLogin(){
+  const m=$('sb-auth-mail').value.trim(),pw=$('sb-auth-pw').value;
+  if(!m||!pw){toast('Zadaj e-mail a heslo');return;}
+  $('sb-auth-st').innerHTML='<span style="color:var(--t3);">⟳ prihlasujem…</span>';
+  const r=await sbLogin(m,pw);
+  $('sb-auth-pw').value='';
+  if(r.ok){toast('✓ Zariadenie prihlásené');auditLog('sb-login',m);}
+  else{toast('Chyba: '+r.err);}
+  sbAuthUI();
+}
+function sbDoLogout(){sbLogout();sbAuthUI();toast('Zariadenie odhlásené');}
+
+// Zistí, či je pb_data naozaj chránené. Test je neinvazívny: skúsi zapísať
+// a zmazať jeden testovací riadok BEZ prihlásenia (len anon kľúčom).
+async function sbSecurityCheck(){
+  const el=$('sb-sec-res');if(!el)return;
+  if(!sbUrl||!sbKey){el.innerHTML='<span style="color:var(--amb);">Najprv nastav URL a kľúč.</span>';return;}
+  el.innerHTML='<span style="color:var(--t3);">⟳ testujem…</span>';
+  const anonH={'apikey':sbKey,'Authorization':'Bearer '+sbKey,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'};
+  const probe='__sec_probe_'+Date.now();
+  const out=[];
+  let canRead=false,canWrite=false,canDelBackup=false;
+  try{
+    const r=await fetch(`${sbUrl}/rest/v1/pb_data?select=id&limit=1`,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
+    canRead=r.ok;
+  }catch(e){}
+  try{
+    const r=await fetch(`${sbUrl}/rest/v1/pb_data`,{method:'POST',headers:anonH,
+      body:JSON.stringify({id:probe,payload:{t:'security probe'},updated_at:new Date().toISOString(),backup_type:'manual',backup_label:'bezpečnostný test'})});
+    canWrite=r.ok;
+  }catch(e){}
+  if(canWrite){
+    try{
+      const r=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${probe}`,{method:'DELETE',headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
+      canDelBackup=r.ok;
+    }catch(e){}
+    if(!canDelBackup){
+      // upratať aj cez prihlásenie, nech neostane odpad
+      try{await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${probe}`,{method:'DELETE',headers:sbH()});}catch(e){}
+    }
+  }
+  const line=(ok,txt)=>`<div style="color:${ok?'var(--grn)':'var(--red)'};">${ok?'✅':'❌'} ${txt}</div>`;
+  out.push(line(!canRead,canRead
+    ?'Anon kľúč ČÍTA celú históriu tržieb — RLS nie je zapnuté'
+    :'Anon kľúč nedokáže čítať dáta'));
+  out.push(line(!canWrite,canWrite
+    ?'Anon kľúč ZAPISUJE do databázy'
+    :'Anon kľúč nedokáže zapisovať'));
+  out.push(line(!canDelBackup,canDelBackup
+    ?'Anon kľúč vie MAZAŤ ZÁLOHY — najvážnejší nález'
+    :'Zálohy sa anon kľúčom zmazať nedajú'));
+  out.push(sbAuthed()
+    ?'<div style="color:var(--grn);">✅ Zariadenie je prihlásené</div>'
+    :'<div style="color:var(--amb);">⚠️ Zariadenie nie je prihlásené</div>');
+  const bad=canRead||canWrite||canDelBackup;
+  out.push(bad
+    ? '<div style="margin-top:6px;padding:7px 9px;background:var(--rbg);border:.5px solid var(--rbd);border-radius:var(--rs);color:var(--red);">Spusti <strong>supabase-pb_data-rls.sql</strong> v Supabase SQL editore. Fáza 1 je bez výpadku.</div>'
+    : '<div style="margin-top:6px;padding:7px 9px;background:var(--gbg);border:.5px solid var(--gbd);border-radius:var(--rs);color:var(--grn);">Databáza je chránená.</div>');
+  el.innerHTML=out.join('');
+  auditLog('security-check',`read=${canRead} write=${canWrite} delBackup=${canDelBackup}`);
 }
 function sbSave(){
   sbUrl=$('sb-u').value.trim().replace(/\/$/,'');
@@ -2039,7 +2338,7 @@ async function sbPushSession(sessKey, sessOverride){
   try{
     const r=await fetch(`${sbUrl}/rest/v1/pb_data`,{
       method:'POST',
-      headers:{'Content-Type':'application/json','apikey':sbKey,'Authorization':'Bearer '+sbKey,'Prefer':'resolution=merge-duplicates'},
+      headers:sbH({json:true,merge:true}),
       body:JSON.stringify({id:sessKey,payload,updated_at:new Date().toISOString(),backup_type:'session'})
     });
     if(!r.ok)console.error('[sbPushSession]',sessKey,await r.text());
@@ -2064,7 +2363,7 @@ async function sbPushSettings(){
   try{
     const r=await fetch(`${sbUrl}/rest/v1/pb_data`,{
       method:'POST',
-      headers:{'Content-Type':'application/json','apikey':sbKey,'Authorization':'Bearer '+sbKey,'Prefer':'resolution=merge-duplicates'},
+      headers:sbH({json:true,merge:true}),
       body:JSON.stringify({id:'pb_settings',payload,updated_at:new Date().toISOString(),backup_type:'settings'})
     });
     if(!r.ok)console.error('[sbPushSettings]',await r.text());
@@ -2280,7 +2579,7 @@ async function sbFetchSessionRow(sKey){
   const doFetch=(async()=>{
     try{
       const r=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${encodeURIComponent(sKey)}&select=payload`,{
-        headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey},signal:ctrl.signal});
+        headers:sbH(),signal:ctrl.signal});
       if(!r.ok)return{ok:false,reason:'http'};
       const rows=await r.json();
       return{ok:true,payload:rows.length?rows[0].payload:null};
@@ -2377,7 +2676,7 @@ async function sbFetchAllSessions(){
   const PAGE=500,out=[];
   for(let from=0;from<200000;from+=PAGE){
     const r=await fetch(`${sbUrl}/rest/v1/pb_data?backup_type=eq.session&select=id,payload,updated_at&order=updated_at.desc`,{
-      headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey,'Range-Unit':'items','Range':`${from}-${from+PAGE-1}`}
+      headers:sbH({range:[from,from+PAGE-1]})
     });
     if(!r.ok)break;
     const rows=await r.json();
@@ -2394,7 +2693,7 @@ async function sbPull(){
   try{
     // 1. Pull settings row
     const sr=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.pb_settings&select=payload`,{
-      headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
+      headers:sbH()
     });
     if(sr.ok){const srows=await sr.json();if(srows.length)_applySettings(srows[0].payload);}
     // 1b. Pull zoznam poukazov od ProPaintballBota (id='vouchers')
@@ -2405,7 +2704,7 @@ async function sbPull(){
     const [sessRows, mainR] = await Promise.all([
       sbFetchAllSessions(),
       fetch(`${sbUrl}/rest/v1/pb_data?id=eq.main&select=payload`,{
-        headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
+        headers:sbH()
       })
     ]);
 
@@ -2465,10 +2764,10 @@ async function sbPollSessions(){
     // Session riadky + tombstones z nastavení SÚČASNE (aby sa vymazanie prenieslo aj počas pollu)
     const [r,tr]=await Promise.all([
       fetch(`${sbUrl}/rest/v1/pb_data?backup_type=eq.session&updated_at=gt.${encodeURIComponent(sinceIso)}&select=id,payload,updated_at&order=updated_at.desc&limit=300`,{
-        headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
+        headers:sbH()
       }),
       fetch(`${sbUrl}/rest/v1/pb_data?id=eq.pb_settings&select=payload`,{
-        headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
+        headers:sbH()
       })
     ]);
     if(!r.ok){_bgPollLock=false;return;}
@@ -2523,7 +2822,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&sbUrl&&sb
 async function cleanupOrphanSessions(){
   if(!isAdmin()){toast('Len admin môže použiť túto funkciu');return;}
   if(!sbUrl||!sbKey){toast('Supabase nie je nastavený');return;}
-  const _h={'apikey':sbKey,'Authorization':'Bearer '+sbKey};
+  const _h=sbH();
   sbSt('Sťahujem aktuálny stav…','var(--amb)');
   try{await sbPull();}catch(e){}
   let rows=[];
@@ -2538,7 +2837,7 @@ async function cleanupOrphanSessions(){
   if(!orphans.length){toast('✓ Žiadne osirené zálohy — Supabase je čistý');sbSt('✓ Čisté','var(--grn)');return;}
   const fmtRow=o=>{const p=o.payload||{};const s=p.sess||{};const bills=p.bills||[];
     const rev=bills.reduce((x,b)=>x+(b.items||[]).reduce((y,i)=>y+i.price*i.qty*(1-(i.disc||0)/100),0),0);
-    return `• ${s.arena||'?'} · ${s.activity||'?'} · ${s.date||fD(o.updated_at)} — ${bills.length} účtov · ${fp(rev)}`;};
+    return `• ${escHtml(s.arena||'?')} · ${escHtml(s.activity||'?')} · ${s.date||fD(o.updated_at)} — ${bills.length} účtov · ${fp(rev)}`;};
   const preview=orphans.slice(0,20).map(fmtRow).join('\n')+(orphans.length>20?`\n…a ďalších ${orphans.length-20}`:'');
   if(!confirm(`Našlo sa ${orphans.length} OSIRENÝCH cloud záloh v Supabase.\nNie sú medzi aktívnymi ani uzavretými akciami na tomto (zosynchronizovanom) zariadení — ide o vymazané akcie, ktorých riadok tam ostal.\n\n${preview}\n\nVYMAZAŤ ich zo Supabase? (lokálne dáta sa NEZMENIA)`))return;
   sbSt('Mažem osirené zálohy…','var(--amb)');
@@ -2557,25 +2856,94 @@ async function cleanupOrphanSessions(){
 }
 
 // ── AUTO BACKUP SCHEDULER ──
-function autoBackupCheck(){
+// ══════════════════════════════════════════════════════════════════
+// PLÁNOVAČ ZÁLOH  (v4e — spoločný stav v cloude)
+//
+// PREDTÝM bol stav zálohovania v localStorage, teda PER ZARIADENIE. Dôsledky:
+//   • každý iPad si robil vlastnú týždennú zálohu → duplicity v cloude
+//   • keď sa v pondelok nezapol ŽIADNY iPad, týždenná záloha ten týždeň nevznikla
+//   • „naposledy zálohované" ukazoval každý iPad inak, podľa toho, čo robil on sám
+//
+// TERAZ je stav v jednom cloudovom riadku `pb_backup_state`. Zálohy sú tým pádom
+// nezávislé od toho, na ktorom zariadení si prihlásený: zálohu spraví ktorékoľvek
+// zariadenie, ktoré je online ako prvé, a všetky vidia rovnaký stav.
+// ══════════════════════════════════════════════════════════════════
+const BK_WEEK_MS=7*86400000, BK_MONTH_MS=28*86400000;
+let _bkState=null,_bkStateTs=0;
+
+async function bkStateLoad(force){
+  if(!sbUrl||!sbKey)return null;
+  if(!force&&_bkState&&Date.now()-_bkStateTs<60000)return _bkState;   // krátka cache
+  try{
+    const r=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.pb_backup_state&select=payload`,{headers:sbH()});
+    if(!r.ok)return _bkState;
+    const rows=await r.json();
+    _bkState=(rows.length&&rows[0].payload)||{};
+    _bkStateTs=Date.now();
+    return _bkState;
+  }catch(e){return _bkState;}
+}
+async function bkStateSave(patch){
   if(!sbUrl||!sbKey)return;
-  const now=new Date();
-  const weekKey='bk_week_'+now.getFullYear()+'_'+getWeekNum(now);
-  const monthKey='bk_month_'+now.getFullYear()+'_'+String(now.getMonth()+1).padStart(2,'0');
-  // Weekly backup (every Monday)
-  if(now.getDay()===1&&!LS.g(weekKey,false)){
-    sbCreateBackup('auto-weekly',`Týždenná záloha ${fD(now.toISOString())}`);
-    LS.s(weekKey,true);
+  const cur=(await bkStateLoad(true))||{};
+  const next={...cur,...patch};
+  try{
+    await fetch(`${sbUrl}/rest/v1/pb_data`,{method:'POST',headers:sbH({json:true,merge:true}),
+      body:JSON.stringify({id:'pb_backup_state',payload:next,updated_at:new Date().toISOString(),
+        backup_type:'backup_state',backup_label:'Stav zálohovania'})});
+    _bkState=next;_bkStateTs=Date.now();
+  }catch(e){console.warn('[Backup] state save failed',e);}
+}
+// Zapíše, že práve teraz vznikla záloha mimo zariadenia (súbor / Drive).
+// Beží aj lokálne, aby to fungovalo bez siete.
+async function bkMarkOffDevice(kind){
+  const now=Date.now();
+  LS.s('pb_last_offdev',now);
+  if(kind==='file')LS.s('pb_last_export',now);
+  await bkStateSave({[kind==='file'?'lastFile':'lastDrive']:{ts:new Date(now).toISOString(),device:_deviceTag()}});
+}
+
+// Ľahký „claim" proti tomu, aby dva iPady spravili tú istú zálohu naraz.
+// Nie je to zámok — najhorší možný výsledok je jedna záloha navyše, čo nevadí.
+async function bkClaim(kind){
+  const tag=_deviceTag(),now=new Date().toISOString();
+  await bkStateSave({['claim_'+kind]:{device:tag,ts:now}});
+  await new Promise(r=>setTimeout(r,1500));
+  const st=await bkStateLoad(true);
+  const c=st&&st['claim_'+kind];
+  return !!(c&&c.device===tag);
+}
+
+async function autoBackupCheck(){
+  if(!sbUrl||!sbKey)return;
+  const st=await bkStateLoad();
+  if(!st)return;
+  const now=Date.now();
+  const age=v=>v&&v.ts?now-new Date(v.ts).getTime():Infinity;
+
+  // TÝŽDENNÁ — nie „v pondelok", ale „ak je staršia než 7 dní".
+  // Vďaka tomu sa dobehne aj vtedy, keď bol areál týždeň zatvorený.
+  if(age(st.lastWeekly)>BK_WEEK_MS){
+    if(await bkClaim('weekly')){
+      const id=await sbCreateBackup('auto-weekly',`Týždenná záloha ${fD(new Date().toISOString())}`);
+      if(id)await bkStateSave({lastWeekly:{ts:new Date().toISOString(),device:_deviceTag()}});
+    }
   }
-  // Monthly backup (1st of month)
-  if(now.getDate()===1&&!LS.g(monthKey,false)){
-    sbCreateBackup('auto-monthly',`Mesačná záloha ${now.toLocaleDateString('sk-SK',{month:'long',year:'numeric'})}`);
-    LS.s(monthKey,true);
-    // Also create local auto-backup
-    createLocalBackup('auto-monthly');
-    // Prune old backups (keep max 24)
-    setTimeout(()=>pruneOldBackups(),2000);
-    pruneBackupFlags();
+  // MESAČNÁ — ak je staršia než 28 dní
+  if(age(st.lastMonthly)>BK_MONTH_MS){
+    if(await bkClaim('monthly')){
+      const id=await sbCreateBackup('auto-monthly',`Mesačná záloha ${new Date().toLocaleDateString('sk-SK',{month:'long',year:'numeric'})}`);
+      if(id){
+        await bkStateSave({lastMonthly:{ts:new Date().toISOString(),device:_deviceTag()}});
+        createLocalBackup('auto-monthly');
+        setTimeout(()=>pruneOldBackups(),2000);
+        pruneBackupFlags();
+      }
+    }
+  }
+  // GOOGLE DRIVE — tiež podľa spoločného stavu, nie podľa toho, ktorý iPad má token
+  if(LS.g('pb_gdrive_token',null)&&age(st.lastDrive)>BK_WEEK_MS){
+    if(await bkClaim('drive'))await gDriveAutoBackup(curSid||'tyzdenna');
   }
 }
 // Príznaky bk_week_* / bk_month_* sa tvorili donekonečna (52 nových kľúčov ročne).
@@ -2585,7 +2953,7 @@ function pruneBackupFlags(){
     const cut=new Date().getFullYear()-2;
     for(let i=localStorage.length-1;i>=0;i--){
       const k=localStorage.key(i);
-      const m=k&&k.match(/^bk_(week|month)_(\d{4})_/);
+      const m=k&&k.match(/^(?:bk|gd)_(week|month)_(\d{4})_/);
       if(m&&parseInt(m[2],10)<cut)localStorage.removeItem(k);
     }
   }catch(_){}
@@ -2626,8 +2994,8 @@ async function sbCreateBackup(type,label){
   try{
     const r=await fetch(`${sbUrl}/rest/v1/pb_data`,{
       method:'POST',
-      headers:{'Content-Type':'application/json','apikey':sbKey,'Authorization':'Bearer '+sbKey,'Prefer':'resolution=merge-duplicates'},
-      body:JSON.stringify({id,payload:await pbPackCloud(plBuild()),updated_at:now.toISOString(),backup_type:type,backup_label:label||id})
+      headers:sbH({json:true,merge:true}),
+      body:JSON.stringify({id,payload:await pbPackCloud(await pbStamp(plBuild())),updated_at:now.toISOString(),backup_type:type,backup_label:label||id})
     });
     if(!r.ok)throw new Error(await r.text());
     console.log('Backup created:',id);
@@ -2639,7 +3007,7 @@ async function pruneOldBackups(){
   try{
     // Only prune versioned auto-backups, never touch session/settings/live rows
     const r=await fetch(`${sbUrl}/rest/v1/pb_data?backup_type=in.(auto-weekly,auto-monthly)&select=id,updated_at,backup_type&order=updated_at.desc`,{
-      headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
+      headers:sbH()
     });
     if(!r.ok)return;
     const rows=await r.json();
@@ -2649,7 +3017,7 @@ async function pruneOldBackups(){
       for(const row of toDelete){
         await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${encodeURIComponent(row.id)}`,{
           method:'DELETE',
-          headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}
+          headers:sbH()
         });
       }
       console.log(`Pruned ${toDelete.length} old backups`);
@@ -2665,7 +3033,7 @@ async function createLocalBackup(type){
   const now=new Date();
   const id='local_'+now.getTime();
   try{
-    const z=await pbGzip(plBuild());
+    const z=await pbGzip(await pbStamp(plBuild()));
     await IDB.put('backups',{
       id,ts:now.toISOString(),type:type||'manual',
       label:type==='auto-monthly'?`Mesačná záloha ${fD(now.toISOString())}`:
@@ -2707,6 +3075,39 @@ async function pruneLocalBackups(){
 }
 
 // ── BACKUP UI ──
+// ── 6) PRIPOMIENKA ZÁLOHY ──
+// Zálohu mimo zariadenia si nikto nepamätá spraviť. Po 8 dňoch sa pripomenie sama,
+// po 30 dňoch dôraznejšie. Jedno klepnutie a je to.
+async function bkReminder(){
+  const el=$('bk-reminder');if(!el)return;
+  // Cloud je hlavná ochrana — ak beží, pripomienka nemá čo strašiť.
+  // Toto pripomína NEZÁVISLÚ kópiu: poistku pre prípad, že zlyhá samotný Supabase.
+  if(!sbUrl||!sbKey){
+    el.style.display='block';
+    el.innerHTML=`<div onclick="_call('openBackups')" style="cursor:pointer;background:var(--rbg);border:1px solid var(--rbd);border-radius:var(--rs);padding:10px 13px;display:flex;align-items:center;gap:10px;">
+      <div style="font-size:18px;">❗</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:700;color:var(--red);">Cloud nie je nastavený</div>
+        <div style="font-size:10.5px;color:var(--t3);">História je len na tomto iPade. Klepni a nastav zálohovanie.</div>
+      </div><div style="font-size:16px;color:var(--t3);">›</div></div>`;
+    return;
+  }
+  const st=(await bkStateLoad())||{};
+  const tsOf=v=>v&&v.ts?new Date(v.ts).getTime():0;
+  const lastOff=Math.max(tsOf(st.lastFile),tsOf(st.lastDrive),LS.g('pb_last_export',0),LS.g('pb_last_offdev',0));
+  const days=lastOff?Math.floor((Date.now()-lastOff)/86400000):999;
+  if(days<31){el.style.display='none';return;}
+  const hard=days>93;
+  el.style.display='block';
+  el.innerHTML=`<div onclick="_call('openBackups')" style="cursor:pointer;background:${hard?'var(--rbg)':'var(--abg)'};border:1px solid ${hard?'var(--rbd)':'var(--abd)'};border-radius:var(--rs);padding:10px 13px;display:flex;align-items:center;gap:10px;">
+    <div style="font-size:18px;">${hard?'❗':'⚠️'}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:12px;font-weight:700;color:${hard?'var(--red)':'var(--amb)'};">${lastOff?`Nezávislá kópia má ${days} dní`:'Chýba nezávislá kópia dát'}</div>
+      <div style="font-size:10.5px;color:var(--t3);">Cloud beží, ale poistka pre prípad jeho zlyhania chýba. Klepni sem.</div>
+    </div>
+    <div style="font-size:16px;color:var(--t3);">›</div>
+  </div>`;
+}
 function openBackups(){
   bkTab('restore');
   bkUpdateStatus();
@@ -2751,42 +3152,72 @@ async function bkUpdateStatus(){
   const el=$('bk-status');if(!el)return;
   const u=await PBS.usage();
   const lastSync=LS.g('pb_last_sync',0);
-  const lastExport=LS.g('pb_last_export',0);
   let localBk=[];try{localBk=await IDB.getAll('backups');}catch(_){}
   localBk.sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+  // ✅ v4e: stav sa berie zo SPOLOČNÉHO cloudového riadku, nie z tohto zariadenia —
+  //    inak by každý iPad tvrdil niečo iné podľa toho, čo náhodou robil on sám.
+  const st=(await bkStateLoad())||{};
+  const tsOf=v=>v&&v.ts?new Date(v.ts).getTime():0;
 
-  // 1) Zariadenie
+  // 1) Zariadenie — pracovná kópia, nie záloha
   const devState=PBS.failed?'bad':'ok';
   const devDetail=PBS.failed
     ? 'IndexedDB nedostupná — beží núdzový režim!'
     : `${u.bills} uzavretých účtov · ${sessArr.length} aktívnych akcií · ${fBytes(u.used)}${u.quota?' z '+fBytes(u.quota):''}`;
 
-  // 2) Cloud
+  // 2) Cloud — HLAVNÁ ochrana. Toto prežije stratu aj rozbitie iPadu.
   const syncAgeH=lastSync?(Date.now()-lastSync)/3600000:null;
+  const lastWeekly=tsOf(st.lastWeekly),lastMonthly=tsOf(st.lastMonthly);
+  const lastCloudBk=Math.max(lastWeekly,lastMonthly);
   const cloudState=!sbUrl?'bad':(syncAgeH===null?'warn':syncAgeH<24?'ok':syncAgeH<72?'warn':'bad');
-  const cloudDetail=!sbUrl?'Supabase nie je nastavený — cloud zálohy nefungujú'
-    :(lastSync?`posledný sync ${fAgo(lastSync)} · ${fDT(new Date(lastSync).toISOString())}`:'zatiaľ nesynchronizované');
+  const cloudDetail=!sbUrl?'Supabase nie je nastavený — história NIE JE nikde mimo iPadu!'
+    :`${lastSync?'sync '+fAgo(lastSync):'zatiaľ nesynchronizované'}`+
+     (lastCloudBk?` · snapshot ${fAgo(lastCloudBk)}`:' · zatiaľ bez snapshotu');
 
-  // 3) Súbor (mimo zariadenia) — najdôležitejšia vrstva
-  const expAgeD=lastExport?(Date.now()-lastExport)/86400000:null;
-  const fileState=expAgeD===null?'bad':expAgeD<8?'ok':expAgeD<31?'warn':'bad';
-  const fileDetail=lastExport
-    ? `naposledy ${fAgo(lastExport)} · ${fD(new Date(lastExport).toISOString())}`
-    : 'ešte nikdy — pri strate iPadu prídeš o všetko';
+  // 3) Nezávislá kópia — poistka proti zlyhaniu SAMOTNÉHO Supabase
+  //    (zmazaný projekt, expirované predplatné, hromadné zmazanie riadkov).
+  const lastOff=Math.max(tsOf(st.lastFile),tsOf(st.lastDrive),LS.g('pb_last_export',0),LS.g('pb_last_offdev',0));
+  const offAgeD=lastOff?(Date.now()-lastOff)/86400000:null;
+  const offState=offAgeD===null?'warn':offAgeD<31?'ok':offAgeD<93?'warn':'bad';
+  const offWho=tsOf(st.lastDrive)>tsOf(st.lastFile)?'Google Drive':'súbor';
+  const offDev=(st.lastFile&&st.lastFile.device)||(st.lastDrive&&st.lastDrive.device)||'';
+  const offDetail=lastOff
+    ? `naposledy ${fAgo(lastOff)} (${offWho}${offDev?', zar. '+escHtml(offDev):''})`
+    : 'zatiaľ žiadna — chýba poistka pre prípad zlyhania Supabase';
 
   el.innerHTML=
     _bkRow('📱','Toto zariadenie',devDetail,devState)+
-    _bkRow('☁','Cloud (Supabase)',cloudDetail,cloudState)+
-    _bkRow('📄','Záloha v súbore',fileDetail,fileState)+
-    `<div style="font-size:10px;color:var(--t3);margin-top:2px;">💾 Snapshotov v zariadení: ${localBk.length}${localBk.length?' · najnovší '+fD(localBk[0].ts):''}</div>`;
+    _bkRow('☁','Cloud — hlavná ochrana',cloudDetail,cloudState)+
+    _bkRow('🗄','Nezávislá kópia',offDetail,offState)+
+    `<div style="font-size:10px;color:var(--t3);margin-top:3px;line-height:1.55;">
+      💾 Snapshotov v zariadení: ${localBk.length}${localBk.length?' · najnovší '+fD(localBk[0].ts):''}<br>
+      ${sbUrl?'Pri strate alebo výmene iPadu sa dáta stiahnu z cloudu (Pull) — o históriu neprídeš.':''}
+    </div>`;
+}
+function bkRecoveryText(){
+  return `Supabase URL: ${sbUrl||'(nenastavené)'}\nAnon Key: ${sbKey||'(nenastavené)'}\n\nObnova: nová verzia appky → Nastavenia → Supabase → zadaj URL a kľúč → ↓ Pull`;
+}
+async function bkCopyRecovery(){
+  const t=bkRecoveryText();
+  try{await navigator.clipboard.writeText(t);toast('✓ Skopírované — ulož do správcu hesiel');}
+  catch(e){
+    // iOS PWA bez clipboard práv — ukáž na označenie ručne
+    const ta=document.createElement('textarea');ta.value=t;ta.style.cssText='position:fixed;top:20%;left:5%;width:90%;height:120px;z-index:99999;font-size:12px;';
+    document.body.appendChild(ta);ta.select();
+    setTimeout(()=>{try{document.body.removeChild(ta);}catch(_){}} ,15000);
+    toast('Označ a skopíruj ručne');
+  }
 }
 async function bkAdvInfo(){
   const el=$('bk-adv-info');if(!el)return;
   const u=await PBS.usage();
-  el.innerHTML=`Automatické zálohy: týždenne (pondelok) + mesačne (1. v mesiaci), plus po každej uzavretej akcii.<br>
+  el.innerHTML=`Automatické zálohy sú spoločné pre všetky zariadenia (stav v cloude):<br>
+    týždenná ak je staršia než 7 dní, mesačná než 28 dní — spraví ich ktorýkoľvek online iPad.<br>
     V zariadení: 12 posledných + všetky mesačné za 2 roky + jedna ročná navždy (gzip).<br>
     V cloude: max 24 snapshotov.<br>
     IndexedDB: <strong>${fBytes(u.used)}</strong>${u.quota?' z '+fBytes(u.quota):''} · localStorage: <strong>${fBytes(u.ls)}</strong> z 5 MB`;
+  const rec=$('bk-recovery');
+  if(rec)rec.textContent=sbUrl?`${sbUrl}\n${sbKey?sbKey.slice(0,28)+'…'+sbKey.slice(-8):'(bez kľúča)'}`:'(Supabase nie je nastavený)';
 }
 // Skutočné zálohy majú tieto typy. Prevádzkové riadky (pb_settings, vouchers, session_*,
 // customer_*) sa do zoznamu obnovenia NESMÚ dostať — obnova z nich nedáva zmysel
@@ -2797,7 +3228,7 @@ async function bkFetchCloudBackups(){
   try{
     const types=BK_RESTORABLE.join(',');
     const r=await fetch(`${sbUrl}/rest/v1/pb_data?backup_type=in.(${types})&select=id,updated_at,backup_label,backup_type&order=updated_at.desc&limit=40`,{
-      headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
+      headers:sbH()});
     if(!r.ok)return[];
     const rows=await r.json();
     return rows.map(x=>({src:'cloud',id:x.id,ts:x.updated_at,label:x.backup_label||x.id,type:x.backup_type}));
@@ -2856,7 +3287,7 @@ async function bkDeleteCloud(id){
   if(!confirm('Vymazať cloud zálohu?'))return;
   try{
     await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${encodeURIComponent(id)}`,{
-      method:'DELETE',headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
+      method:'DELETE',headers:sbH()});
     bkRenderRestore();toast('Záloha vymazaná');
   }catch(e){console.error('[Supabase delete]',e);toast('Chyba pri mazaní zálohy');}
 }
@@ -2870,12 +3301,15 @@ async function bkDownloadLocal(id){
   const payload=await pbGunzip(bk);
   bkExportPayload(payload,`propaintball_zaloha_${bk.ts.slice(0,10)}.json`);
 }
-function bkExportJSON(){
-  const payload=plBuild();
-  bkExportPayload(payload,`propaintball_zaloha_${new Date().toISOString().slice(0,10)}.json`);
-  LS.s('pb_last_export',Date.now());   // ✅ sleduj, kedy naposledy vznikla záloha mimo zariadenia
+async function bkExportJSON(){
+  // GDPR: záloha obsahuje mená, e-maily a telefóny zákazníkov a odchádza mimo firmu.
+  // Ak ju potrebuješ len na financie/účty, osobné údaje netreba brať so sebou.
+  const noPII=$('bk-nopii')?.checked;
+  const payload=await pbStamp(plBuild({noPII}));
+  bkExportPayload(payload,`propaintball_zaloha_${new Date().toISOString().slice(0,10)}${noPII?'_bezPII':''}.json`);
+  await bkMarkOffDevice('file');   // ✅ zapíše sa aj do spoločného stavu v cloude
   bkUpdateStatus();
-  toast(`✓ Stiahnuté — ${closed.length} účtov. Ulož súbor mimo iPadu!`);
+  toast(`✓ Stiahnuté — ${closed.length} účtov${noPII?' (bez osobných údajov)':''}. Ulož súbor mimo iPadu!`);
 }
 function bkExportPayload(payload,filename){
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
@@ -2895,6 +3329,8 @@ function _rcImpact(payload){
   // Ktoré účty v zálohe chýbajú a odkedy
   const bkIds=new Set((payload.closed||[]).map(b=>b.id));
   const lost=closed.filter(w=>!bkIds.has(w.id));
+  const curIds=new Set(closed.map(w=>w.id));
+  const wouldAdd=(payload.closed||[]).filter(b=>b&&b.id&&!curIds.has(b.id)).length;
   const lostDates=lost.map(w=>w.closedAt).filter(Boolean).sort();
   const dCol=diff<0?'var(--red)':diff>0?'var(--grn)':'var(--t3)';
   const sDiff=newSess-curSess;
@@ -2903,8 +3339,11 @@ function _rcImpact(payload){
       <tr><td style="padding:3px 8px 3px 0;color:var(--t2);">Uzavreté účty</td><td style="text-align:right;padding-right:10px;">${curBills}</td><td style="text-align:right;padding-right:10px;">${newBills}</td><td style="text-align:right;font-weight:700;color:${dCol};">${diff>0?'+':''}${diff}</td></tr>
       <tr><td style="padding:3px 8px 3px 0;color:var(--t2);">Aktívne akcie</td><td style="text-align:right;padding-right:10px;">${curSess}</td><td style="text-align:right;padding-right:10px;">${newSess}</td><td style="text-align:right;font-weight:700;color:${sDiff<0?'var(--red)':'var(--t3)'};">${sDiff>0?'+':''}${sDiff}</td></tr>
     </table>`+
+    `<div style="background:var(--gbg);border:.5px solid var(--gbd);border-radius:var(--rs);padding:8px 11px;font-size:11px;color:var(--grn);margin-top:8px;">
+       ➕ <strong>Doplnenie</strong> pridá ${wouldAdd} ${wouldAdd===1?'chýbajúci účet':wouldAdd<5?'chýbajúce účty':'chýbajúcich účtov'} a nič nezmaže.
+     </div>`+
     (lost.length?`<div style="background:var(--rbg);border:.5px solid var(--rbd);border-radius:var(--rs);padding:9px 12px;font-size:11px;color:var(--red);margin-top:9px;line-height:1.6;">
-        ❌ <strong>Stratíš ${lost.length} ${lost.length===1?'účet':lost.length<5?'účty':'účtov'}</strong>, ktoré v tejto zálohe nie sú.<br>
+        ❌ <strong>Stratíš ${lost.length} ${lost.length===1?'účet':lost.length<5?'účty':'účtov'}</strong>, ${lost.length===1?'ktorý v tejto zálohe nie je':'ktoré v tejto zálohe nie sú'}.<br>
         ${lostDates.length?`Najstarší z nich: ${fD(lostDates[0])} · najnovší: ${fD(lostDates[lostDates.length-1])}`:''}
       </div>`
      :`<div style="background:var(--gbg);border:.5px solid var(--gbd);border-radius:var(--rs);padding:9px 12px;font-size:11px;color:var(--grn);margin-top:9px;">
@@ -2930,7 +3369,7 @@ async function bkPreviewRestore(id,source){
   if(source==='cloud'){
     try{
       const r=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${encodeURIComponent(id)}&select=payload,backup_label,updated_at`,{
-        headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
+        headers:sbH()});
       const rows=await r.json();
       if(!rows.length){toast('Záloha nenájdená');return;}
       payload=await pbUnpackCloud(rows[0].payload);
@@ -2942,7 +3381,29 @@ async function bkPreviewRestore(id,source){
     info=`Obnoviť zálohu zo <strong>zariadenia</strong>:<br><strong style="color:var(--t1);">${escHtml(bk.label||id)}</strong><br><span style="color:var(--t3);">Vytvorená: ${fDT(bk.ts)}</span>`;
   }
   if(!payload||(!payload.closed&&!payload.sessArr)){toast('Záloha je poškodená alebo prázdna');return;}
+  const v=await pbVerify(payload);
+  if(v==='bad'){
+    info+=`<br><span style="color:var(--red);font-weight:700;">⚠️ Kontrolný súčet NESEDÍ — záloha je poškodená alebo bola upravená.</span>`;
+  }else if(v==='ok'){
+    info+=`<br><span style="color:var(--grn);">🔒 Kontrolný súčet overený</span>`;
+  }
+  if(payload.piiStripped)info+=`<br><span style="color:var(--amb);">ℹ️ Záloha je bez osobných údajov zákazníkov — tie sa neobnovia.</span>`;
   _rcOpen(info,payload);
+}
+async function confirmMerge(){
+  if(!restorePayload)return;
+  const b=$('rc-merge');if(b){b.disabled=true;b.textContent='Dopĺňam…';}
+  await createLocalBackup('pre-restore');
+  const res=plMerge(restorePayload);
+  await PBS.flush();
+  restorePayload=null;selId=null;chkd=new Set();
+  cm('m-restore-confirm');cm('m-backup');
+  refUI();updateUserBtn();updateTabVisibility();
+  auditLog('data-merge',`bills=${res.bills} sess=${res.sessions}`);
+  if(b){b.disabled=false;b.textContent='➕ Len doplniť chýbajúce (nič sa nestratí)';}
+  toast(res.bills||res.sessions
+    ? `✓ Doplnené: ${res.bills} účtov, ${res.sessions} akcií. Nič sa nestratilo.`
+    : '✓ Nič nechýbalo — všetko zo zálohy už máš.');
 }
 async function confirmRestore(){
   if(!restorePayload)return;
@@ -2973,7 +3434,13 @@ function bkImportFile(input){
       if(!data.closed&&!data.sessArr){$('bk-imp-prev').innerHTML='<span style="color:var(--red);">Neplatný formát — toto nie je záloha pokladne.</span>';return;}
       window._bkImported=data;
       const kb=(JSON.stringify(data).length/1024).toFixed(0);
-      $('bk-imp-prev').innerHTML=`<div style="background:var(--gbg);border:.5px solid var(--gbd);border-radius:var(--rs);padding:8px 10px;margin-top:6px;">✓ Platná záloha<br>Účty: <strong>${data.closed?.length||0}</strong> · Akcie: <strong>${data.sessArr?.length||0}</strong><br>Dátum: <strong>${data.ts?fDT(new Date(data.ts).toISOString()):'neznámy'}</strong> · ${kb} kB</div><button class="btn G" style="margin-top:8px;" onclick="bkImportConfirm()">↩ Pokračovať v obnove</button>`;
+      pbVerify(data).then(v=>{
+        const sum=v==='ok'?'<br><span style="color:var(--grn);">🔒 Kontrolný súčet overený</span>'
+                 :v==='bad'?'<br><span style="color:var(--red);font-weight:700;">⚠️ Kontrolný súčet NESEDÍ — súbor je poškodený alebo upravený!</span>'
+                 :'<br><span style="color:var(--t3);">Bez kontrolného súčtu (staršia záloha)</span>';
+        const pii=data.piiStripped?'<br><span style="color:var(--amb);">ℹ️ Bez osobných údajov zákazníkov</span>':'';
+        $('bk-imp-prev').innerHTML=`<div style="background:var(--gbg);border:.5px solid var(--gbd);border-radius:var(--rs);padding:8px 10px;margin-top:6px;">✓ Platná záloha<br>Účty: <strong>${data.closed?.length||0}</strong> · Akcie: <strong>${data.sessArr?.length||0}</strong><br>Dátum: <strong>${data.ts?fDT(new Date(data.ts).toISOString()):'neznámy'}</strong> · ${kb} kB${sum}${pii}</div><button class="btn G" style="margin-top:8px;" onclick="bkImportConfirm()">↩ Pokračovať v obnove</button>`;
+      });
     }catch(err){$('bk-imp-prev').innerHTML='<span style="color:var(--red);">Chyba pri čítaní: '+escHtml(err.message)+'</span>';}
   };
   reader.readAsText(file);
@@ -3045,14 +3512,14 @@ function pickP(el,grp){
   }
 }
 
-function confirmInstLogin(){
+async function confirmInstLogin(){
   const selName=gP('instructor');
   if(!selName){$('inst-pw-err').textContent='Vyber inštruktora';return;}
   // ✅ Always verify password — no auto-login from memory
   const pwInput=$('inst-pw-input');
   const pw=pwInput?pwInput.value:'';
   if(!pw){$('inst-pw-err').textContent='Zadaj heslo';if(pwInput)pwInput.focus();return;}
-  const success=loginUser(selName,pw);
+  const success=await loginUser(selName,pw);
   if(success){
     if(isAdmin()){admUnlocked=true;if(typeof rPM==='function')rPM();}
     // Close login area, show badge, and close the instructor accordion
@@ -3147,12 +3614,12 @@ function askLogoutAfterSess(){
   }
 }
 
-function checkAdm(){
+async function checkAdm(){
   if(Date.now()<_loginLockUntil){toast('Prilis vela pokusov. Skus o '+Math.ceil((_loginLockUntil-Date.now())/1000)+'s');return;}
   const pw=$('adm-pw').value;
   const selEl=$('adm-user-sel');
   const selName=selEl?selEl.value:'';
-  if(loginUser(selName||'Admin',pw)){
+  if(await loginUser(selName||'Admin',pw)){
     cm('m-adm');
     if(isAdmin()){
       admUnlocked=true;
@@ -3181,7 +3648,7 @@ function showAdmLogin(){
 }
 function lockSett(){admUnlocked=false;$('adm-lock').style.display='flex';$('sett-c').style.display='none';}
 function logoutAndLock(){logoutUser();lockSett();updateTabVisibility();$('app').style.display='none';showLanding();toast(t('toast-logged-out'));}
-function changePw(){const o=$('old-pw').value,n=$('new-pw').value,n2=$('new-pw2').value;if(!checkPw(o,admPw)){toast('Nesprávne staré heslo');return;}if(n.length<4){toast('Min 4 znaky');return;}if(n!==n2){toast('Heslá sa nezhodujú');return;}admPw=simpleHash(n);save();$('old-pw').value='';$('new-pw').value='';$('new-pw2').value='';auditLog('pw-change','admin');toast('Heslo zmenené');}
+async function changePw(){const o=$('old-pw').value,n=$('new-pw').value,n2=$('new-pw2').value;if(!await checkPw(o,admPw)){toast('Nesprávne staré heslo');return;}if(n.length<4){toast('Min 4 znaky');return;}if(n!==n2){toast('Heslá sa nezhodujú');return;}admPw=await hashPw(n);save();$('old-pw').value='';$('new-pw').value='';$('new-pw2').value='';auditLog('pw-change','admin');toast('Heslo zmenené');}
 function saveHR(){hrRate=parseFloat($('hr-rate').value)||6;save();toast('Sadzba: €'+hrRate+'/hod');}
 // ══ TABS ══
 const TABS=['reg','open','spravca','analyzy','moje','sett'];
@@ -3261,7 +3728,7 @@ function initStart(){
   }
   rStartSL();
 }
-function rStartSL(){const el=$('start-sl'),cont=$('start-slist');if(!sessArr.length){cont.style.display='none';return;}cont.style.display='block';el.innerHTML=sessArr.map(s=>{const ww=wbMap[s.key]||[];return`<div class="si"><div><div style="font-size:13px;font-weight:600;">${s.arena} – ${s.activity}</div><div style="font-size:10px;color:var(--t3);margin-top:2px;">${s.date} ${s.time} · ${instrLabel(s)} · ${ww.length} ${t('players-added')}</div></div><button class="btn sm B" onclick="resumeSess('${s.key}')">Otvoriť →</button></div>`;}).join('');}
+function rStartSL(){const el=$('start-sl'),cont=$('start-slist');if(!sessArr.length){cont.style.display='none';return;}cont.style.display='block';el.innerHTML=sessArr.map(s=>{const ww=wbMap[s.key]||[];return`<div class="si"><div><div style="font-size:13px;font-weight:600;">${escHtml(s.arena)} – ${escHtml(s.activity)}</div><div style="font-size:10px;color:var(--t3);margin-top:2px;">${s.date} ${s.time} · ${instrLabel(s)} · ${ww.length} ${t('players-added')}</div></div><button class="btn sm B" onclick="resumeSess('${s.key}')">Otvoriť →</button></div>`;}).join('');}
 function aT(n){const bd=$('ab-'+n),ar=$('aa-'+n);const isO=bd.classList.contains('op');['arena','instructor','activity'].forEach(x=>{$('ab-'+x).classList.remove('op');$('aa-'+x).classList.remove('op');});if(!isO){bd.classList.add('op');ar.classList.add('op');}}
 function setAV(n,v){const e=$('av-'+n);if(e)e.textContent=v||'—';}
 function rPills(cid,items,grp){
@@ -3286,7 +3753,7 @@ function startSess(){
   if(_pendingReservation){
     sessObj.calEventId=_pendingReservation.eventId;
     sessObj.calRunNumber=getCalEventRunNumber(_pendingReservation.eventId);
-    sessObj.reservation={custName:_pendingReservation.custName,custEmail:_pendingReservation.custEmail,custPhone:_pendingReservation.custPhone,players:_pendingReservation.players,lang:_pendingReservation.lang,zfa:_pendingReservation.zfa};
+    sessObj.reservation={custName:sanName(_pendingReservation.custName),custEmail:sanName(_pendingReservation.custEmail,120),custPhone:sanName(_pendingReservation.custPhone,40),players:_pendingReservation.players,lang:_pendingReservation.lang,zfa:_pendingReservation.zfa};
   }
   sessArr.push(sessObj);
   if(!wbMap[key])wbMap[key]=[];curSid=key;save();
@@ -3299,7 +3766,7 @@ function startSess(){
     signups.forEach((su,idx)=>{
       const c=su.pb_customers||{};
       const pid=newWbId();
-      const pname=c.nick||c.fullname||('Hráč '+(idx+1));
+      const pname=sanName(c.nick||c.fullname)||('Hráč '+(idx+1));
       const pemail=c.email||'';
       wbMap[key].push({
         id:pid,name:pname,email:pemail,items:[],
@@ -3340,7 +3807,7 @@ function startSess(){
     const count=Math.min(res.players,30);
     for(let i=0;i<count;i++){
       const pid=newWbId();
-      const pname=i===0&&res.custName?res.custName:((currentLang==='en'?'Player':'Hráč')+' '+(i+1));
+      const pname=i===0&&res.custName?sanName(res.custName):((currentLang==='en'?'Player':'Hráč')+' '+(i+1));
       const pemail=i===0?res.custEmail||'':'';
       const sess=sessArr.find(s=>s.key===key)||{};
       wbMap[key].push({id:pid,name:pname,email:pemail,items:[],sKey:key,sArena:sess.arena,sInstr:sess.instructor,sAct:sess.activity,openedAt:new Date().toISOString(),bUsed:0,bLoad:0,dG:[],pkgDone:false});
@@ -3373,8 +3840,8 @@ function rAppSessBar(){
     const allAgencyClean=hasAgency&&agencyWbs.every(w=>agencyExtraItems(w).length===0);
     const statusIcon=hasAgency&&allAgencyClean?' ✅':'';
     const instrArr=getSessionInstructors(s);
-    const name=`${s.arena}·${instrArr.map(n=>n.split(' ')[0]).join('+')}${sessRunSuffix(s)}`;
-    const tooltip=`${s.arena} · ${s.activity} · ${instrArr.join(' + ')}${sessRunSuffix(s)}${hasAgency&&!allAgencyClean?' — '+t('agency-unpaid-extras'):''}`;
+    const name=`${escHtml(s.arena)}·${instrArr.map(n=>n.split(' ')[0]).join('+')}${sessRunSuffix(s)}`;
+    const tooltip=`${escHtml(s.arena)} · ${escHtml(s.activity)} · ${instrArr.join(' + ')}${sessRunSuffix(s)}${hasAgency&&!allAgencyClean?' — '+t('agency-unpaid-extras'):''}`;
     return`<span class="spill ${isCur?'cur':''}" onclick="swSess('${s.key}')" title="${tooltip}">${name}${statusIcon}${isCur?' ●':''}</span>`;
   }).join('');
   // Update multi-session bottom bar
@@ -3429,8 +3896,8 @@ function showSessModal(){
   $('m-sess-b').innerHTML=`<div style="display:grid;gap:5px;">
     <div class="rr"><span>Dátum akcie</span><span>${s.date?s.date.split('-').reverse().join('.'):'—'}${s.time?' · '+s.time:''}</span></div>
     <div class="rr" style="color:var(--t2);font-size:12px;"><span>⏱ Vytvorená</span><span>${_satStr}</span></div>
-    <div class="rr"><span>Areál</span><span>${s.arena||'—'}</span></div>
-    <div class="rr"><span>Aktivita</span><span>${s.activity||'—'}${sessRunSuffix(s)?`<span style="color:var(--amb);margin-left:4px;font-size:11px;">${sessRunSuffix(s)}</span>`:''}</span></div>
+    <div class="rr"><span>Areál</span><span>${escHtml(s.arena||'—')}</span></div>
+    <div class="rr"><span>Aktivita</span><span>${escHtml(s.activity||'—')}${sessRunSuffix(s)?`<span style="color:var(--amb);margin-left:4px;font-size:11px;">${sessRunSuffix(s)}</span>`:''}</span></div>
     <div class="rr" style="align-items:flex-start;"><span>Inštruktori</span>
       <div style="text-align:right;">
         ${instr.map(i=>`<div style="font-size:12px;font-weight:600;">${escHtml(i)}</div>`).join('')}
@@ -3815,7 +4282,7 @@ function rProds(){
     if(ALPHA.includes(cat))ps=[...ps].sort((a,b)=>a.name.localeCompare(b.name,'sk'));
     const isO=catOp[cat]!==false;
     return`<div class="cat-s"><div class="cat-h" onclick="togCat('${cat}')"><span class="cat-n">${tCat(cat)} (${ps.length})</span><span style="font-size:9px;color:var(--t3);">${isO?'▲':'▼'}</span></div>
-    <div class="cat-b ${isO?'op':''}"><div class="pgrid">${ps.map(p=>`<button class="pb" onclick="${p.isHour?`openXH(${p.id})`:`addP(${p.id})`}"><div class="pe">${p.emoji}</div><div class="pn">${tProd(p.name)}</div><div class="pp">${fp(p.price)}</div></button>`).join('')}</div></div></div>`;
+    <div class="cat-b ${isO?'op':''}"><div class="pgrid">${ps.map(p=>`<button class="pb" onclick="${p.isHour?`openXH(${p.id})`:`addP(${p.id})`}"><div class="pe">${p.emoji}</div><div class="pn">${escHtml(tProd(p.name))}</div><div class="pp">${fp(p.price)}</div></button>`).join('')}</div></div></div>`;
   }).join('');
 }
 function togCat(c){catOp[c]=catOp[c]===false?true:false;rProds();}
@@ -3978,11 +4445,11 @@ function openXH(pid){
   }
   if(!currentUser){toast(t('toast-login-required'));return;}
   xhPid=pid;const p=prods.find(x=>x.id===pid);const wbs=getWbs();
-  $('m-xh-t').textContent=`⏰ ${p?p.name:''} – ${fp(p?p.price:0)}`;
+  $('m-xh-t').textContent=`⏰ ${escHtml(p?p.name:'')} – ${fp(p?p.price:0)}`;
   const perP=wbs.length?(p?p.price:0)/wbs.length:0;
   $('m-xh-b').innerHTML=`<div style="font-size:12px;color:var(--t2);margin-bottom:9px;">Cena: <strong style="color:var(--t1);">${fp(p?p.price:0)}</strong>${wbs.length?` · Na hráča: <strong style="color:var(--grn);">${fp(perP)}</strong>`:''}</div>`;
   // P5: pre-select currently selected player
-  const sel=$('xh-sel');sel.innerHTML=wbs.map((w,i)=>`<option value="${w.id}" ${w.id===selId?'selected':''}>#${i+1} ${w.name}</option>`).join('');
+  const sel=$('xh-sel');sel.innerHTML=wbs.map((w,i)=>`<option value="${w.id}" ${w.id===selId?'selected':''}>#${i+1} ${escHtml(w.name)}</option>`).join('');
   om('m-xh');
 }
 function addXH(mode){
@@ -4030,7 +4497,7 @@ function rWbs(){
       <div class="wbox ${ch?'on':''}" onclick="event.stopPropagation();togChk('${w.id}')"></div>
       <div class="pnum">${idx+1}</div>
       <div class="wi">
-        <div class="wn">${w.name}</div>
+        <div class="wn">${escHtml(w.name)}</div>
         <div class="wm">${pkB}${blB}${drkB}${depB}<span style="font-size:9px;color:var(--t3);">${w.id.startsWith('H-')?t('manual-id'):w.id}</span></div>
         ${(pk&&pk.isPB&&selId===w.id)?`<div style="display:flex;gap:8px;margin-top:6px;justify-content:center;" onclick="event.stopPropagation()"><button class="btn" style="font-size:16px;padding:8px 18px;font-weight:700;background:var(--bg2);border:1.5px solid var(--b2);color:var(--t1);" onclick="event.stopPropagation();selWb('${w.id}');mShot(100);playPaySound()">+100</button><button class="btn" style="font-size:16px;padding:8px 18px;font-weight:700;background:var(--bg2);border:1.5px solid var(--b2);color:var(--t1);" onclick="event.stopPropagation();selWb('${w.id}');mShot(200);playPaySound()">+200</button><button class="btn" style="font-size:16px;padding:8px 18px;font-weight:700;background:var(--rbg);border:1.5px solid var(--rbd);color:var(--amb);" onclick="event.stopPropagation();selWb('${w.id}');uShot(100)">-100</button></div>`:''}
       </div>
@@ -4246,7 +4713,7 @@ function _renderGrpPrev(){
   const depProd=sel.reduce((s,w)=>s+depositItemAmt(w),0);
   const totalDep=grpDep+depProd;
   const naInkaso=tot-totalDep;
-  $('grp-prev').innerHTML=sel.map((w,i)=>`<div class="rr"><span>#${wbs.indexOf(w)+1} ${w.name}</span><span>${fp(billAmt(w))}</span></div>`).join('')+`<div class="rr tot"><span>${t("total")} (${sel.length} ${currentLang==="en"?"players":"hráčov"})</span><span>${fp(tot)}</span></div>`+(totalDep>0?`<div class="rr" style="color:var(--grn);"><span>💰 Záloha (zaplatená vopred)</span><span>-${fp(totalDep)}</span></div><div class="rr tot" style="color:var(--amb);"><span>Na inkaso teraz</span><span>${fp(naInkaso)}</span></div>`:'');
+  $('grp-prev').innerHTML=sel.map((w,i)=>`<div class="rr"><span>#${wbs.indexOf(w)+1} ${escHtml(w.name)}</span><span>${fp(billAmt(w))}</span></div>`).join('')+`<div class="rr tot"><span>${t("total")} (${sel.length} ${currentLang==="en"?"players":"hráčov"})</span><span>${fp(tot)}</span></div>`+(totalDep>0?`<div class="rr" style="color:var(--grn);"><span>💰 Záloha (zaplatená vopred)</span><span>-${fp(totalDep)}</span></div><div class="rr tot" style="color:var(--amb);"><span>Na inkaso teraz</span><span>${fp(naInkaso)}</span></div>`:'');
 }
 // ══ BILL ══
 function rBill(){
@@ -4300,7 +4767,7 @@ function rBill(){
       const agBadge=isAgency?(isPkgItem
         ?`<span style="font-size:8px;padding:1px 4px;border-radius:99px;background:var(--pbg);color:var(--pur);">🧾</span>`
         :`<span style="font-size:8px;padding:1px 4px;border-radius:99px;background:var(--bg3);color:var(--t3);">💳/💵</span>`):'';
-      return`<div class="oit"><div class="oin"><div>${it.name}</div>`+
+      return`<div class="oit"><div class="oin"><div>${escHtml(it.name)}</div>`+
         `<div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:1px;">`+
         `<span style="font-size:9px;color:var(--t3);">×${it.qty}</span>`+
         `${d>0?`<span class="dtag">-${d}%</span><span style="font-size:10px;color:var(--t3);text-decoration:line-through;">€${o}</span>`:''}`+
@@ -4358,7 +4825,7 @@ function sVouchers(a){colSet('vouchers',a);}
 async function pullVouchers(){
   if(!sbUrl||!sbKey)return;
   try{
-    const r=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.vouchers&select=payload,updated_at`,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
+    const r=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.vouchers&select=payload,updated_at`,{headers:sbH()});
     if(!r.ok)return;
     const rows=await r.json();
     const p=rows&&rows[0]&&rows[0].payload;
@@ -4410,7 +4877,7 @@ function onVoucherNumInput(){
     el.innerHTML=box('var(--abg)','var(--abd)',ev.label)+`<div style="font-size:10px;color:var(--t3);margin-top:3px;">Uplatniť môžeš aj tak — uloží sa s upozornením do reportu.</div>`;
     if(amtEl&&ev.amount&&!parseFloat(amtEl.value))amtEl.value=ev.amount;
   }else{ // used / cancelled / notfound
-    el.innerHTML=`<div style="background:var(--rbg);border:2px solid var(--red);border-radius:var(--rs);padding:9px 11px;font-weight:700;color:var(--red);">${ev.label}</div><div style="font-size:10px;color:var(--t3);margin-top:3px;">Ak si istý, môžeš uplatniť aj tak — uloží sa VÝRAZNE do reportu na overenie.</div>`;
+    el.innerHTML=`<div style="background:var(--rbg);border:2px solid var(--red);border-radius:var(--rs);padding:9px 11px;font-weight:700;color:var(--red);">${escHtml(ev.label)}</div><div style="font-size:10px;color:var(--t3);margin-top:3px;">Ak si istý, môžeš uplatniť aj tak — uloží sa VÝRAZNE do reportu na overenie.</div>`;
     if(amtEl&&ev.amount&&!parseFloat(amtEl.value))amtEl.value=ev.amount;
   }
 }
@@ -4425,7 +4892,7 @@ function confirmVoucher(){
   const ev=_voucherEval&&_voucherEval.state!=='empty'?_voucherEval:evalVoucher(num);
   // ⚠️ Neplatný poukaz → výrazné potvrdenie (ale povolené — zaráta sa a označí v reporte)
   if(['used','cancelled','notfound'].includes(ev.state)){
-    if(!confirm(`⚠️ POZOR — ${ev.label}\n\nČíslo: ${num||'—'}\n\nNaozaj chceš tento poukaz uplatniť?\nUloží sa VÝRAZNE do reportu na dodatočné overenie.`))return;
+    if(!confirm(`⚠️ POZOR — ${escHtml(ev.label)}\n\nČíslo: ${num||'—'}\n\nNaozaj chceš tento poukaz uplatniť?\nUloží sa VÝRAZNE do reportu na dodatočné overenie.`))return;
   }
   let useAmt=amt;
   if(useAmt>cur){useAmt=cur;toast('⚠️ Poukaz skrátený na výšku účtu: '+fp(cur));}
@@ -4448,12 +4915,12 @@ function redeemVoucherCloud(num,amount,w,vStatus){
     by:currentUser?.name||'',arena:w?.sArena||getSess()?.arena||'',activity:w?.sAct||getSess()?.activity||'',
     player:w?.name||'',check_status:vStatus,device:LS.g('pb_device_id','')||'—'};
   // Načítaj existujúci list redemptions, pridaj, ulož
-  fetch(`${sbUrl}/rest/v1/pb_data?id=eq.voucher_redemptions&select=payload`,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}})
+  fetch(`${sbUrl}/rest/v1/pb_data?id=eq.voucher_redemptions&select=payload`,{headers:sbH()})
     .then(r=>r.ok?r.json():[]).then(rows=>{
       const cur=(rows&&rows[0]&&rows[0].payload&&Array.isArray(rows[0].payload.list))?rows[0].payload.list:[];
       cur.push(rec);
       return fetch(`${sbUrl}/rest/v1/pb_data`,{method:'POST',
-        headers:{'Content-Type':'application/json','apikey':sbKey,'Authorization':'Bearer '+sbKey,'Prefer':'resolution=merge-duplicates'},
+        headers:sbH({json:true,merge:true}),
         body:JSON.stringify({id:'voucher_redemptions',payload:{list:cur,updatedAt:new Date().toISOString()},updated_at:new Date().toISOString(),backup_type:'voucher_redemptions'})});
     }).catch(e=>console.warn('[redeemVoucher]',e));
 }
@@ -4670,8 +5137,8 @@ function closeBill(){
 function _renderPayPrev(w,wbId){
   const dep=getDepositForWb(wbId);
   const amtAfterDeposit=billAmt(w)-dep;
-  $('pay-prev').innerHTML=`<div style="font-size:13px;font-weight:600;color:var(--t1);margin-bottom:7px;">${w.name}</div>`+
-    w.items.map(i=>{const d=i.disc||0;return`<div class="rr"><span>${i.name} ×${i.qty}${d>0?` -${d}%`:''}</span><span>${fp(i.price*i.qty*(1-d/100))}</span></div>`;}).join('')+
+  $('pay-prev').innerHTML=`<div style="font-size:13px;font-weight:600;color:var(--t1);margin-bottom:7px;">${escHtml(w.name)}</div>`+
+    w.items.map(i=>{const d=i.disc||0;return`<div class="rr"><span>${escHtml(i.name)} ×${i.qty}${d>0?` -${d}%`:''}</span><span>${fp(i.price*i.qty*(1-d/100))}</span></div>`;}).join('')+
     (dep>0?`<div class="rr" style="color:var(--grn);">` +
       `<span>💰 Záloha (zaplatená vopred)</span><span>-${fp(dep)}</span></div>`+
       `<div class="rr tot" style="color:var(--amb);"><span>Na inkaso teraz</span><span>${fp(amtAfterDeposit)}</span></div>`
@@ -4718,15 +5185,15 @@ function openAgencyPay(wbId){
   const extAmt=extItems.reduce((s,i)=>s+i.price*i.qty*(1-(i.disc||0)/100),0);
   const pkgAmt=agencyPkgBillAmt(w);
   $('agency-pay-info').innerHTML=
-    `<strong style="color:var(--t1);">${w.name}</strong><br>`+
+    `<strong style="color:var(--t1);">${escHtml(w.name)}</strong><br>`+
     `💳/💵 Doplnky: <strong style="color:var(--blu);">${fp(extAmt)}</strong>`+
     ` &nbsp;·&nbsp; 🧾 Balík (zostatok): <strong style="color:var(--pur);">${fp(pkgAmt)}</strong>`;
   $('agency-extras-section').style.display='block';
   $('agency-extras-list').innerHTML=extItems.map(i=>{const d=i.disc||0;
-    return`<div class="rr"><span>${i.name} ×${i.qty}</span><span>${fp(i.price*i.qty*(1-d/100))}</span></div>`;
+    return`<div class="rr"><span>${escHtml(i.name)} ×${i.qty}</span><span>${fp(i.price*i.qty*(1-d/100))}</span></div>`;
   }).join('')+`<div class="rr tot" style="margin-top:4px;"><span>Doplnky celkom</span><span>${fp(extAmt)}</span></div>`;
   $('agency-pkg-list').innerHTML=agencyPkgItems(w).map(i=>
-    `<div class="rr"><span>${i.name} ×${i.qty}</span><span>${fp(i.price*i.qty*(1-(i.disc||0)/100))}</span></div>`
+    `<div class="rr"><span>${escHtml(i.name)} ×${i.qty}</span><span>${fp(i.price*i.qty*(1-(i.disc||0)/100))}</span></div>`
   ).join('')+`<div class="rr tot" style="margin-top:4px;"><span>Balík na faktúru</span><span>${fp(pkgAmt)}</span></div>`;
   om('m-agency-pay');
 }
@@ -4831,7 +5298,7 @@ function openCloseSess(key,bills){
   // Block close if any agency player still has unpaid extras
   const withExtras=agencyPending.filter(w=>agencyExtraItems(w).length>0);
   if(withExtras.length>0){
-    toast(`❌ ${withExtras.map(w=>w.name).join(', ')} — ${t('agency-unpaid-extras')}. ${t('agency-toast-pay-first')}`);
+    toast(`❌ ${escHtml(withExtras.map(w=>w.name).join(', '))} — ${t('agency-unpaid-extras')}. ${t('agency-toast-pay-first')}`);
     return;
   }
   // Auto-close agency players with only packages → invoice
@@ -5074,8 +5541,8 @@ function saveEditAmt(){
 function openVrp(){
   const wbs=getWbs();const w=wbs.find(w=>w.id===selId);if(!w||!w.items.length){toast(t('toast-no-items'));return;}
   const tot=billAmt(w),round=Math.round(tot/0.05)*0.05,rnd=round-tot;const now=new Date();const s=getSess();
-  const rows=w.items.map(i=>{const d=i.disc||0;const lp=i.price*i.qty*(1-d/100);return`  ${i.name.padEnd(20).slice(0,20)} ${String(i.qty).padStart(3)}× €${i.price.toFixed(2).padStart(6)} = €${lp.toFixed(2).padStart(7)}${d>0?` -${d}%`:''}`;}).join('\n');
-  $('m-vrp-b').innerHTML=`<div class="vrp">POKLADNIČNÝ DOKLAD\n${biz.name||''}\nIČO: ${biz.ico||'—'}  DIČ: ${biz.dic||'—'}\n${biz.addr||''}\nAreál: ${s?.arena||'—'}  Inštruktor: ${s?.instructor||'—'}\n${'─'.repeat(40)}\nZákazník: ${w.name}\nDátum: ${now.toLocaleDateString('sk-SK')} ${now.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'})}\n${'─'.repeat(40)}\n${rows}\n${'─'.repeat(40)}\nCELKOM:       ${('€'+round.toFixed(2)).padStart(10)}\nDPH (20%):    ${('€'+(tot*0.2/1.2).toFixed(2)).padStart(10)}\n${'─'.repeat(40)}</div><div style="font-size:11px;color:var(--t3);margin-top:7px;">VRP2 → Nový doklad → zadaj → vydaj</div>`;
+  const rows=w.items.map(i=>{const d=i.disc||0;const lp=i.price*i.qty*(1-d/100);return`  ${escHtml(i.name.padEnd(20).slice(0,20))} ${String(i.qty).padStart(3)}× €${i.price.toFixed(2).padStart(6)} = €${lp.toFixed(2).padStart(7)}${d>0?` -${d}%`:''}`;}).join('\n');
+  $('m-vrp-b').innerHTML=`<div class="vrp">POKLADNIČNÝ DOKLAD\n${biz.name||''}\nIČO: ${biz.ico||'—'}  DIČ: ${biz.dic||'—'}\n${biz.addr||''}\nAreál: ${s?.arena||'—'}  Inštruktor: ${s?.instructor||'—'}\n${'─'.repeat(40)}\nZákazník: ${escHtml(w.name)}\nDátum: ${now.toLocaleDateString('sk-SK')} ${now.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'})}\n${'─'.repeat(40)}\n${rows}\n${'─'.repeat(40)}\nCELKOM:       ${('€'+round.toFixed(2)).padStart(10)}\nDPH (20%):    ${('€'+(tot*0.2/1.2).toFixed(2)).padStart(10)}\n${'─'.repeat(40)}</div><div style="font-size:11px;color:var(--t3);margin-top:7px;">VRP2 → Nový doklad → zadaj → vydaj</div>`;
   om('m-vrp');
 }
 // ══ OPEN ══
@@ -5118,14 +5585,14 @@ function quickPay(wbId){
   else{toast('Hráč nemá žiadne položky');}
 }
 
-function adminForceCloseSess(sKey){
+async function adminForceCloseSess(sKey){
   if(!isAdmin()){toast('Len admin môže použiť túto funkciu');return;}
   const sess=sessArr.find(s=>s.key===sKey);
   if(!sess){toast('Session nenájdená');return;}
   const wbs=wbMap[sKey]||[];
   const openCount=wbs.length;
   const closedCount=closed.filter(w=>w.sKey===sKey).length;
-  const label=`${sess.arena||'—'} · ${sess.activity||'—'}`;
+  const label=`${escHtml(sess.arena||'—')} · ${escHtml(sess.activity||'—')}`;
 
   // Confirm dialog s popisom
   const confirmMsg=`Zabudnutá hra — admin uzavretie\n\n` +
@@ -5135,7 +5602,7 @@ function adminForceCloseSess(sKey){
     `Zadaj admin heslo pre potvrdenie:`;
   const pw=prompt(confirmMsg);
   if(pw===null)return; // zrušiť
-  if(!checkPw(pw,admPw)){toast('❌ Nesprávne admin heslo');return;}
+  if(!await checkPw(pw,admPw)){toast('❌ Nesprávne admin heslo');return;}
 
   // Uzavrieť a vymazať
   auditLog('admin-force-close',sKey);
@@ -5428,11 +5895,11 @@ function rClosed(){
     <div class="gb" id="g-${gi}">
       ${grp.map(w=>`<div class="card" style="margin-bottom:6px;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;">
-          <div><span style="font-size:13px;font-weight:600;">${w.name}</span><span class="bdg ${(w.paidExtras&&w.paidExtras.length)?'bi':w.payM==='card'?'bk':w.payM==='invoice'?'bi':'bc'}">${(w.paidExtras&&w.paidExtras.length)?'🧾+'+(w.paidExtras.some(e=>e.payM==='card')?'💳':'💵')+(w.paidExtras.some(e=>e.payM==='cash')&&w.paidExtras.some(e=>e.payM==='card')?'+💵':''):(w.payM==='card'?'💳 Karta':w.payM==='invoice'?'🧾 Faktúra':'💵 Hotovosť')}</span></div>
+          <div><span style="font-size:13px;font-weight:600;">${escHtml(w.name)}</span><span class="bdg ${(w.paidExtras&&w.paidExtras.length)?'bi':w.payM==='card'?'bk':w.payM==='invoice'?'bi':'bc'}">${(w.paidExtras&&w.paidExtras.length)?'🧾+'+(w.paidExtras.some(e=>e.payM==='card')?'💳':'💵')+(w.paidExtras.some(e=>e.payM==='cash')&&w.paidExtras.some(e=>e.payM==='card')?'+💵':''):(w.payM==='card'?'💳 Karta':w.payM==='invoice'?'🧾 Faktúra':'💵 Hotovosť')}</span></div>
           <div style="text-align:right;flex-shrink:0;margin-left:8px;"><div style="font-size:10px;color:var(--t3);">${fT(w.closedAt)}</div><div style="display:flex;gap:4px;margin-top:3px;justify-content:flex-end;"><button class="btn xs B" onclick="openEPayM('${w.id}')">✎</button><button class="btn xs A" onclick="openReopen('${w.id}')">↩</button>${admUnlocked?`<button class="btn xs R" onclick="adminDeleteBill('${w.id}')" title="Zmazať účet">🗑</button>`:''}</div></div>
         </div>
         ${(()=>{const pkg=getPkg(w);if(!pkg)return'';const payIcon=w.payM==='card'?'💳 Karta':w.payM==='invoice'?'🧾 Faktúra':'💵 Hotovosť';const showBalls=pkg.isPB||pkg.isAS||pkg.isGB;const ballStr=showBalls?`🔴 ${w.bUsed||0}/${totBalls(w)} guličiek`:'';const drinkStr=(w.dG&&w.dG.length)?`🥤 ${w.dG.join(', ')}`:'' ;return showBalls||drinkStr?`<div style="font-size:10px;color:var(--t2);margin:2px 0;">${[ballStr,drinkStr].filter(Boolean).join(' · ')}</div>`:''})()}
-        ${w.items.map(i=>{const d=i.disc||0;return`<div class="rr"><span>${i.name} ×${i.qty}${d>0?' (-'+d+'%)':''}</span><span>${fp(i.price*i.qty*(1-d/100))}</span></div>`;}).join('')}
+        ${w.items.map(i=>{const d=i.disc||0;return`<div class="rr"><span>${escHtml(i.name)} ×${i.qty}${d>0?' (-'+d+'%)':''}</span><span>${fp(i.price*i.qty*(1-d/100))}</span></div>`;}).join('')}
         <div class="rr tot"><span>Inkasované</span><span>${fp(billAmt(w))}</span></div>
       </div>`).join('')}
     </div>`;
@@ -5568,7 +6035,7 @@ function openReport(key){
     </div>
     <div class="rep-section">
       <div class="rep-title">📋 Zákazníci</div>
-      ${(()=>{const sorted=[...grp].sort((a,b)=>(a.orderIdx||0)-(b.orderIdx||0));return sorted.map((w,i)=>`<div class="rep-row"><span>#${i+1} ${w.name}</span><span style="display:flex;gap:6px;align-items:center;"><span style="font-size:10px;color:var(--t2);">${(w.paidExtras&&w.paidExtras.length)?'🧾'+(w.paidExtras.some(e=>e.payM==='card')?' +💳':'')+(w.paidExtras.some(e=>e.payM==='cash')?' +💵':''):w.payM==='card'?'💳':w.payM==='invoice'?'🧾':'💵'}</span><strong>${fp(totalAmt(w))}</strong></span></div>`).join('');})()}
+      ${(()=>{const sorted=[...grp].sort((a,b)=>(a.orderIdx||0)-(b.orderIdx||0));return sorted.map((w,i)=>`<div class="rep-row"><span>#${i+1} ${escHtml(w.name)}</span><span style="display:flex;gap:6px;align-items:center;"><span style="font-size:10px;color:var(--t2);">${(w.paidExtras&&w.paidExtras.length)?'🧾'+(w.paidExtras.some(e=>e.payM==='card')?' +💳':'')+(w.paidExtras.some(e=>e.payM==='cash')?' +💵':''):w.payM==='card'?'💳':w.payM==='invoice'?'🧾':'💵'}</span><strong>${fp(totalAmt(w))}</strong></span></div>`).join('');})()}
       <div class="rep-row bold"><span>Celkom</span><span>${fp(tot)}</span></div>
     </div>
 `  <!-- chart removed -->;
@@ -5674,7 +6141,7 @@ function sendMailReport(){
 function openDelSess(key){
   delSessKey=key;const grp=closed.filter(w=>(w.sKey||'unknown')===key);
   const sm=buildSessMap();const si=sm[key]||{};
-  $('m-del-b').innerHTML=`<strong>${si.arena||'—'} – ${si.activity||'—'}</strong><br>Inštruktor: ${si.instructor||'—'}<br>Počet účtov: ${grp.length}<br>Tržby: ${fp(grp.reduce((s,w)=>s+totalAmt(w),0))}`;
+  $('m-del-b').innerHTML=`<strong>${escHtml(si.arena||'—')} – ${escHtml(si.activity||'—')}</strong><br>Inštruktor: ${escHtml(si.instructor||'—')}<br>Počet účtov: ${grp.length}<br>Tržby: ${fp(grp.reduce((s,w)=>s+totalAmt(w),0))}`;
   om('m-del-sess');
 }
 function confirmDelSess(){
@@ -5683,7 +6150,7 @@ function confirmDelSess(){
   const sess=sessArr.find(s=>s.key===key);
   // ✅ Finálne potvrdenie (rovnako ako pri zmene platby) — mazanie je nezvratné a šíri sa na všetky zariadenia.
   const _sm=buildSessMap();const _si=_sm[key]||{};
-  if(!confirm(`Naozaj vymazať túto akciu?\n\n${_si.arena||'—'} · ${_si.activity||'—'} · ${_si.instructor||'—'}\nÚčtov: ${grpBills.length} · Tržby: ${fp(grpBills.reduce((s,w)=>s+totalAmt(w),0))}\n\nAkcia sa archivuje a odstráni zo všetkých zariadení.`))return;
+  if(!confirm(`Naozaj vymazať túto akciu?\n\n${escHtml(_si.arena||'—')} · ${escHtml(_si.activity||'—')} · ${escHtml(_si.instructor||'—')}\nÚčtov: ${grpBills.length} · Tržby: ${fp(grpBills.reduce((s,w)=>s+totalAmt(w),0))}\n\nAkcia sa archivuje a odstráni zo všetkých zariadení.`))return;
   const pouts=lPouts();const notes=lNotes();const de=lDE();
   // Archive
   archive.push({key,archivedAt:new Date().toISOString(),sess:sess||{},bills:grpBills,pout:pouts[key],note:notes[key],dateEdit:de[key]});
@@ -5702,7 +6169,7 @@ function confirmDelSess(){
   cm('m-del-sess');save();rClosed();rAkcie();rAppSessBar();updInvBadge();
   // ✅ Zmaž cloud riadok akcie + rozšír tombstone cez nastavenia (ostatné zariadenia ju odstránia)
   if(sbUrl&&sbKey){
-    fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${encodeURIComponent(key)}`,{method:'DELETE',headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}}).catch(()=>{});
+    fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${encodeURIComponent(key)}`,{method:'DELETE',headers:sbH()}).catch(()=>{});
     sbPushSettings().catch(()=>{});
     sbPush(); // prepíše legacy 'main' snapshot bez vymazanej akcie
   }
@@ -5755,7 +6222,7 @@ function rAkcie(){
     const dl=Object.keys(dStats).length?Object.entries(dStats).map(([k,v])=>`${k}: ${v}×`).join(', '):'';
     return`<div class="ak">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:9px;">
-        <div><div style="font-size:15px;font-weight:700;">${s.arena} – ${s.activity} – ${instrLabel(s)}${sessRunSuffix(s)}</div><div style="font-size:11px;color:var(--t3);margin-top:2px;">${s.date||''} ${s.time||''}${s.active?' <span class="bdg bo">● aktívna</span>':''}</div></div>
+        <div><div style="font-size:15px;font-weight:700;">${escHtml(s.arena)} – ${escHtml(s.activity)} – ${instrLabel(s)}${sessRunSuffix(s)}</div><div style="font-size:11px;color:var(--t3);margin-top:2px;">${s.date||''} ${s.time||''}${s.active?' <span class="bdg bo">● aktívna</span>':''}</div></div>
         <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;">
           <button class="btn sm B" onclick="openNote('${s.key}')">📝</button>
           ${cc>0?`<button class="btn sm P" onclick="openReport('${s.key}')">📊 Report</button>`:''}
@@ -6508,7 +6975,7 @@ function rAnalyzy(){
     aPieInst=new Chart(pieCtx,{
       type:'doughnut',
       data:{
-        labels:prodArr.map(p=>`${p.name} (${p.count}ks · ${totalRev>0?(p.rev/totalRev*100).toFixed(1):0}%)`),
+        labels:prodArr.map(p=>`${escHtml(p.name)} (${p.count}ks · ${totalRev>0?(p.rev/totalRev*100).toFixed(1):0}%)`),
         datasets:[{
           data:prodArr.map(p=>p.rev),
           backgroundColor:pieColors2,
@@ -6522,7 +6989,7 @@ function rAnalyzy(){
           tooltip:{callbacks:{
             label:ctx=>{
               const p=prodArr[ctx.dataIndex];
-              return [`${p.name}`,`Predané: ${p.count} ks`,`Tržby: ${fp(p.rev)}`,`Podiel z tržieb: ${totalRev>0?(p.rev/totalRev*100).toFixed(1):0}%`];
+              return [`${escHtml(p.name)}`,`Predané: ${p.count} ks`,`Tržby: ${fp(p.rev)}`,`Podiel z tržieb: ${totalRev>0?(p.rev/totalRev*100).toFixed(1):0}%`];
             }
           }}
         }
@@ -7106,7 +7573,7 @@ function exportPeriod(){
   XLSX.writeFile(wb,`ProPaintball_report_${fFrom?fD(fFrom.toISOString()).replace(/\./g,'-'):'vsetko'}.xlsx`);toast('Períodický export OK');
 }
 // ══ SETTINGS ══
-function rPM(){$('pm-l').innerHTML=prods.map(p=>`<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:.5px solid var(--b1);"><span style="font-size:14px;width:22px;text-align:center;">${p.emoji}</span><span style="flex:1;font-size:12px;">${p.name}<small style="color:var(--t3);font-size:9px;margin-left:4px;">${p.cat}</small></span><input style="width:60px;font-size:12px;padding:4px 6px;background:var(--bg3);border:.5px solid var(--b2);border-radius:var(--rx);color:var(--t1);" type="number" value="${p.price}" min="0" step="0.5" onchange="updP(${p.id},this.value)"/><button class="btn xs R" onclick="delP(${p.id})">✕</button></div>`).join('');}
+function rPM(){$('pm-l').innerHTML=prods.map(p=>`<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:.5px solid var(--b1);"><span style="font-size:14px;width:22px;text-align:center;">${p.emoji}</span><span style="flex:1;font-size:12px;">${escHtml(p.name)}<small style="color:var(--t3);font-size:9px;margin-left:4px;">${p.cat}</small></span><input style="width:60px;font-size:12px;padding:4px 6px;background:var(--bg3);border:.5px solid var(--b2);border-radius:var(--rx);color:var(--t1);" type="number" value="${p.price}" min="0" step="0.5" onchange="updP(${p.id},this.value)"/><button class="btn xs R" onclick="delP(${p.id})">✕</button></div>`).join('');}
 function updP(id,v){const p=prods.find(x=>x.id===id);if(p){p.price=parseFloat(v)||0;save();rProds();}}
 function delP(id){prods=prods.filter(p=>p.id!==id);save();rProds();rPM();}
 function addProd2(){const n=$('np-n').value.trim(),pr=parseFloat($('np-p').value)||0,cat=$('np-c').value,em=$('np-e').value.trim()||'🎯';if(!n){toast('Zadaj názov');return;}prods.push({id:nextId++,name:n,price:pr,cat,emoji:em});$('np-n').value='';$('np-p').value='';save();rProds();rPM();toast('"'+n+'" pridaný');}
@@ -7114,7 +7581,7 @@ function rSL(cid,arr,type){$(cid).innerHTML=arr.map((it,i)=>`<div class="si" sty
 function delSI(t,i){if(t==='arena')arenas.splice(i,1);else if(t==='instructor')instructors.splice(i,1);else if(t==='activity')activities.splice(i,1);save();rSL(t==='arena'?'al-l':t==='instructor'?'il-l':'acl-l',t==='arena'?arenas:t==='instructor'?instructors:activities,t);}
 function addSI(t){const ids={arena:'na',instructor:'ni',activity:'nac'};const v=$(ids[t]).value.trim();if(!v)return;if(t==='arena')arenas.push(v);else if(t==='instructor')instructors.push(v);else if(t==='activity')activities.push(v);$(ids[t]).value='';save();rSL(t==='arena'?'al-l':t==='instructor'?'il-l':'acl-l',t==='arena'?arenas:t==='instructor'?instructors:activities,t);}
 function saveBiz(){biz={name:$('biz-n').value.trim(),ico:$('biz-ico').value.trim(),dic:$('biz-dic').value.trim(),addr:$('biz-a').value.trim()};save();toast('Firemné údaje uložené');}
-function fillSett(){const su=$('sb-u'),sk=$('sb-k');if(su&&sbUrl)su.value=sbUrl;if(sk&&sbKey)sk.value=sbKey;const gdc=$('gdrive-client-id');if(gdc)gdc.value=LS.g('pb_gdrive_client_id','');updateGDriveStatus();const calIdEl=$('cal-calendar-id');if(calIdEl)calIdEl.value=LS.g('pb_cal_id','');updateCalStatus();const hr=$('hr-rate');if(hr)hr.value=hrRate;['biz-n','biz-ico','biz-dic','biz-a'].forEach((f,i)=>{const e=$(f);if(e&&biz[['name','ico','dic','addr'][i]])e.value=biz[['name','ico','dic','addr'][i]];});renderCustList();renderCustWarnings();}
+function fillSett(){const su=$('sb-u'),sk=$('sb-k');if(su&&sbUrl)su.value=sbUrl;if(sk&&sbKey)sk.value=sbKey;const gdc=$('gdrive-client-id');if(gdc)gdc.value=LS.g('pb_gdrive_client_id','');updateGDriveStatus();const calIdEl=$('cal-calendar-id');if(calIdEl)calIdEl.value=LS.g('pb_cal_id','');updateCalStatus();const hr=$('hr-rate');if(hr)hr.value=hrRate;['biz-n','biz-ico','biz-dic','biz-a'].forEach((f,i)=>{const e=$(f);if(e&&biz[['name','ico','dic','addr'][i]])e.value=biz[['name','ico','dic','addr'][i]];});renderCustList();renderCustWarnings();sbAuthUI();}
 // ══ MODALS ══
 function om(id){
   $(id).classList.add('op');
@@ -7349,6 +7816,7 @@ function showLanding(){
   updateLandingUser();
   rLandingSessions();
   populateLandingUsers();
+  bkReminder();
   // Load calendar reservations
   if(LS.g('pb_cal_sa_creds',null)&&LS.g('pb_cal_id','')){
     if(_calReservations.length)rLandingReservations();
@@ -7419,13 +7887,13 @@ function onLandingUserChange(){
   }
 }
 
-function doLandingLogin(){
+async function doLandingLogin(){
   const name=$('landing-user-sel')?.value;
   if(!name){if($('landing-pw-err'))$('landing-pw-err').textContent='Vyber užívateľa';return;}
   let success=false;
   // ✅ Always require password — no auto-login from memory
   const pw=$('landing-pw')?.value||'';
-  success=loginUser(name,pw);
+  success=await loginUser(name,pw);
   if(success){
     hideLandingLogin();updateLandingUser();updateTabVisibility();updateUserBtn();
     if($('landing-pw-err'))$('landing-pw-err').textContent='';
@@ -7473,15 +7941,15 @@ function goBackOffice(){
   hideLanding();showApp();setTimeout(()=>gT(isAdmin()?'spravca':'moje'),50);
 }
 
-function changeInstPw(){
+async function changeInstPw(){
   if(!currentUser||isAdmin()){toast('Použi admin sekciu');return;}
   const oldPw=$('inst-old-pw')?.value,newPw=$('inst-new-pw')?.value,newPw2=$('inst-new-pw2')?.value;
   if(!oldPw||!newPw){toast('Vyplň obe polia');return;}
   if(newPw!==newPw2){toast('Heslá sa nezhodujú');return;}
   if(newPw.length<4){toast('Min. 4 znaky');return;}
   const users=buildIUsers();const u=users.find(x=>x.name===currentUser.name);
-  if(!u||!checkPw(oldPw,u.pw)){toast('Nesprávne staré heslo');return;}
-  const customPws=LS.g('pb_custom_pws',{});customPws[currentUser.name]=simpleHash(newPw);LS.s('pb_custom_pws',customPws);
+  if(!u||!await checkPw(oldPw,u.pw)){toast('Nesprávne staré heslo');return;}
+  const customPws=LS.g('pb_custom_pws',{});customPws[currentUser.name]=await hashPw(newPw);LS.s('pb_custom_pws',customPws);
   LS.s('pb_remembered',null);
   toast('Heslo zmenené. Prihláste sa znova.');
   ['inst-old-pw','inst-new-pw','inst-new-pw2'].forEach(id=>{const e=$(id);if(e)e.value='';});
@@ -7591,7 +8059,7 @@ async function gDriveAutoBackup(sessKey){
   const dateStr=now.toISOString().slice(0,10);
   const arena=(sess?.arena||'akcia').replace(/[^\w]/g,'_');
   const filename=`ProPaintball_${arena}_${dateStr}_${now.toTimeString().slice(0,5).replace(':','-')}.json`;
-  const id=await gDriveUpload(filename,plBuild());
+  const id=await gDriveUpload(filename,await pbStamp(plBuild()));
   if(id){
     toast('✅ Záloha nahraná na Google Drive');
     // Save reference
@@ -7599,6 +8067,7 @@ async function gDriveAutoBackup(sessKey){
     refs.unshift({id,filename,ts:now.toISOString(),sessKey});
     if(refs.length>50)refs.splice(50);
     LS.s('pb_gdrive_refs',refs);
+    bkMarkOffDevice('drive');  // ✅ Drive sa počíta ako nezávislá kópia (spoločný stav)
   }
 }
 
@@ -7733,7 +8202,7 @@ async function pollNewSignups(eventId,sessKey){
     let added=0;
     newSignups.forEach((su,idx)=>{
       const c=su.pb_customers||{};
-      const pname=c.nick||c.fullname||('Hráč +1');
+      const pname=sanName(c.nick||c.fullname)||('Hráč +1');
       const pemail=c.email||'';
       const wbs=wbMap[sessKey];
       // Hľadaj prázdny generický slot ("Hráč N" bez položiek, bez emailu, bez signupId)
@@ -8512,10 +8981,10 @@ function deleteWbConfirm(){
   toast(t('del-player-done'));
 }
 
-function clearCalWarning(key){
+async function clearCalWarning(key){
   const pw=prompt('Zadaj admin heslo pre potvrdenie zmazania:');
   if(pw===null)return;
-  if(!checkPw(pw,admPw)){toast('❌ Nesprávne heslo',true);return;} // ✅ podpora hashovaného hesla
+  if(!await checkPw(pw,admPw)){toast('❌ Nesprávne heslo',true);return;} // ✅ podpora hashovaného hesla
   const warnings=LS.g('pb_cal_warnings',{});
   delete warnings[key];
   LS.s('pb_cal_warnings',warnings);
@@ -8523,10 +8992,10 @@ function clearCalWarning(key){
   toast('Záznam zmazaný');
 }
 
-function clearAllCalWarnings(){
+async function clearAllCalWarnings(){
   const pw=prompt('Zadaj admin heslo pre zmazanie CELÉHO zoznamu:');
   if(pw===null)return;
-  if(!checkPw(pw,admPw)){toast('❌ Nesprávne heslo',true);return;} // ✅ podpora hashovaného hesla
+  if(!await checkPw(pw,admPw)){toast('❌ Nesprávne heslo',true);return;} // ✅ podpora hashovaného hesla
   LS.s('pb_cal_warnings',{});
   renderCustWarnings();
   toast('Zoznam vymazaný');
@@ -8652,7 +9121,7 @@ async function pushCustomerBehaviorToCloud(){
   try{
     await fetch(`${sbUrl}/rest/v1/pb_data`,{
       method:'POST',
-      headers:{'Content-Type':'application/json','apikey':sbKey,'Authorization':'Bearer '+sbKey,'Prefer':'resolution=merge-duplicates'},
+      headers:sbH({json:true,merge:true}),
       body:JSON.stringify({id:'customer_behavior',payload,updated_at:new Date().toISOString(),backup_type:'customer_behavior'})
     });
   }catch(e){console.warn('[pushCustomerBehavior]',e);}
