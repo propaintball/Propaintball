@@ -1504,7 +1504,7 @@ function saveAll(){
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.08.19a';
+const APP_VERSION='2026.08.20b';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1622,7 +1622,7 @@ function reopenWholeSession(key){
   const bills=closed.filter(w=>(w.sKey||'unknown')===key);
   if(!bills.length){toast('Akcia nemá uzavreté účty');return;}
   const fw=bills[0];
-  if(!confirm(`🔄 OŽIVIŤ AKCIU\n\n${fw.sArena||''} · ${fw.sAct||''} · ${bills.length} hráčov\n\nVšetci hráči sa vrátia do pokladne ako otvorení (so zapamätaným spôsobom platby). Môžeš pridať/odobrať hráča či produkt a znova uzavrieť.\n\nPokračovať?`))return;
+  if(!confirm(`🔄 OŽIVIŤ AKCIU\n\n${escHtml(fw.sArena||'')} · ${escHtml(fw.sAct||'')} · ${bills.length} hráčov\n\nVšetci hráči sa vrátia do pokladne ako otvorení (so zapamätaným spôsobom platby). Môžeš pridať/odobrať hráča či produkt a znova uzavrieť.\n\nPokračovať?`))return;
   auditLog('reopen-session',key+' | '+bills.length+' hráčov');
   // Reaktivuj session
   let sess=sessArr.find(s=>s.key===key);
@@ -1805,6 +1805,9 @@ function fp(v){return'€'+(+v).toFixed(2);}
 function sanName(v,max){
   return String(v==null?'':v).replace(/[<>&"'`\\]/g,'').replace(/[\u0000-\u001F\u007F]/g,'').trim().slice(0,max||60);
 }
+// Bezpečné vloženie textu do JS reťazca v inline onclick="fn('…')".
+// Pozor: escHtml tu nestačí — HTML parser entity dekóduje pred spustením JS.
+function jsq(v){return String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'\\u003c').replace(/[\r\n]/g,'');}
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 // ══ HESLÁ ══
 // Do v4d sa používal `simpleHash` — 32-bitový súčet, ktorý sa dá zlomiť hrubou silou
@@ -3921,8 +3924,8 @@ function rAppSessBar(){
     const allAgencyClean=hasAgency&&agencyWbs.every(w=>agencyExtraItems(w).length===0);
     const statusIcon=hasAgency&&allAgencyClean?' ✅':'';
     const instrArr=getSessionInstructors(s);
-    const name=`${escHtml(s.arena)}·${instrArr.map(n=>n.split(' ')[0]).join('+')}${sessRunSuffix(s)}`;
-    const tooltip=`${escHtml(s.arena)} · ${escHtml(s.activity)} · ${instrArr.join(' + ')}${sessRunSuffix(s)}${hasAgency&&!allAgencyClean?' — '+t('agency-unpaid-extras'):''}`;
+    const name=`${escHtml(s.arena)}·${escHtml(instrArr.map(n=>n.split(' ')[0]).join('+'))}${sessRunSuffix(s)}`;
+    const tooltip=`${escHtml(s.arena)} · ${escHtml(s.activity)} · ${escHtml(instrArr.join(' + '))}${sessRunSuffix(s)}${hasAgency&&!allAgencyClean?' — '+t('agency-unpaid-extras'):''}`;
     return`<span class="spill ${isCur?'cur':''}" onclick="swSess('${s.key}')" title="${tooltip}">${name}${statusIcon}${isCur?' ●':''}</span>`;
   }).join('');
   // Update multi-session bottom bar
@@ -3955,7 +3958,7 @@ function rAppSessBar(){
         const actColor=s.activity?.toLowerCase().includes('airsoft')?'var(--grn)':s.activity?.toLowerCase().includes('laser')?'var(--tel)':s.activity?.toLowerCase().includes('gel')?'var(--blu)':'var(--red)';
         return`<div class="msb-item ${isCur?'active':''}" onclick="swSess('${s.key}')">
           <div class="msb-name">${escHtml(s.arena||'—')} <span style="color:${actColor};">· ${escHtml(s.activity||'—')}</span>${sessRunSuffix(s)?`<span style="color:var(--amb);font-size:10px;">${sessRunSuffix(s)}</span>`:''}</div>
-          <div class="msb-meta">👤 ${instrArr.map(n=>n.split(' ')[0]).join(' + ')} ${elapsedStr?'· ⏱'+elapsedStr:''}</div>
+          <div class="msb-meta">👤 ${escHtml(instrArr.map(n=>n.split(' ')[0]).join(' + '))} ${elapsedStr?'· ⏱'+elapsedStr:''}</div>
           ${staleStr?`<div class="msb-meta" style="color:var(--amb);font-weight:600;">⚠️ otvorená ${staleStr}</div>`:''}
           <div class="msb-stats">
             <span style="color:var(--grn);">👥${activePlayers}</span>
@@ -4196,7 +4199,7 @@ function rPbt(){
   }
   sec.innerHTML=`<div class="trk">
     <div class="ch" style="margin-bottom:6px;">🔴 Guličky</div>
-    <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;display:inline-block;margin-bottom:7px;background:${pk.bg};color:${pk.col};">${pk.name} · ${tb} guličiek</span>
+    <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;display:inline-block;margin-bottom:7px;background:${pk.bg};color:${pk.col};">${escHtml(pk.name)} · ${tb} guličiek</span>
     ${pbContent}
   </div>`;
 }
@@ -4369,8 +4372,8 @@ function rProds(){
     let ps=ap.filter(p=>p.cat===cat);
     if(ALPHA.includes(cat))ps=[...ps].sort((a,b)=>a.name.localeCompare(b.name,'sk'));
     const isO=catOp[cat]!==false;
-    return`<div class="cat-s"><div class="cat-h" onclick="togCat('${cat}')"><span class="cat-n">${tCat(cat)} (${ps.length})</span><span style="font-size:9px;color:var(--t3);">${isO?'▲':'▼'}</span></div>
-    <div class="cat-b ${isO?'op':''}"><div class="pgrid">${ps.map(p=>`<button class="pb" onclick="${p.isHour?`openXH(${p.id})`:`addP(${p.id})`}"><div class="pe">${p.emoji}</div><div class="pn">${escHtml(tProd(p.name))}</div><div class="pp">${fp(p.price)}</div></button>`).join('')}</div></div></div>`;
+    return`<div class="cat-s"><div class="cat-h" onclick="togCat('${jsq(cat)}')"><span class="cat-n">${escHtml(tCat(cat))} (${ps.length})</span><span style="font-size:9px;color:var(--t3);">${isO?'▲':'▼'}</span></div>
+    <div class="cat-b ${isO?'op':''}"><div class="pgrid">${ps.map(p=>`<button class="pb" onclick="${p.isHour?`openXH(${p.id})`:`addP(${p.id})`}"><div class="pe">${escHtml(p.emoji)}</div><div class="pn">${escHtml(tProd(p.name))}</div><div class="pp">${fp(p.price)}</div></button>`).join('')}</div></div></div>`;
   }).join('');
 }
 function togCat(c){catOp[c]=catOp[c]===false?true:false;rProds();}
@@ -4570,7 +4573,7 @@ function rWbs(){
   el.innerHTML=wbs.map((w,idx)=>{
     const pk=getPkg(w);const tb=totBalls(w);const used=w.bUsed||0;
     const pct=tb>0?Math.round(used/tb*100):0;const bc=pct<60?'var(--grn)':pct<85?'var(--amb)':'var(--red)';
-    const pkB=pk?`<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:99px;background:${pk.bg};color:${pk.col};">${pk.name}</span>`:'';
+    const pkB=pk?`<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:99px;background:${pk.bg};color:${pk.col};">${escHtml(pk.name)}</span>`:'';
     // ✅ Hide ball badge for LT/NF (no balls used)
     const showBalls=pk&&(pk.isPB||pk.isAS||pk.isGB);
     const blB=showBalls?`<span style="font-size:9px;color:${bc};">🔴${used}/${tb}</span>`:'';
@@ -5106,8 +5109,9 @@ function getSessionInstructors(sess){
   if(sess.instructors&&sess.instructors.length)return sess.instructors;
   return sess.instructor?[sess.instructor]:[];
 }
+// Vracia spojené mená inštruktorov. Volajúci ho vkladajú do HTML, preto escapuje tu.
 function instrLabel(sess){
-  const instr=getSessionInstructors(sess);
+  const instr=(getSessionInstructors(sess)||[]).map(n=>escHtml(n));
   return instr.length>1?instr.join(' + '):(instr[0]||'—');
 }
 // ══ DEPOSIT (ZÁLOHA) ══
@@ -5530,7 +5534,7 @@ function openCloseSess(key,bills){
   closeSessKey=key;
   const hasAgency=allBills.some(w=>isAgencyWb(w));
   const sessInstrs=getSessionInstructors(sess);
-  $('m-cs-info').innerHTML=`<strong style="color:var(--t1);">${t('all-paid')}</strong><br>${t('arena-lbl2')} ${sess?.arena||'—'} · ${sess?.activity||'—'}<br>${t('instr-lbl2')} ${sessInstrs.join(', ')||'—'}<br>`+
+  $('m-cs-info').innerHTML=`<strong style="color:var(--t1);">${t('all-paid')}</strong><br>${t('arena-lbl2')} ${escHtml(sess?.arena||'—')} · ${escHtml(sess?.activity||'—')}<br>${t('instr-lbl2')} ${escHtml(sessInstrs.join(', '))||'—'}<br>`+
     `${t('revenue')} <strong style="color:var(--grn);">${fp(tot)}</strong>`+
     (hasAgency?`<br><span style="font-size:10px;color:var(--t3);">🧾 Faktúra: ${fp(invTot)} · 💵 Hotovosť: ${fp(cashTot)} · 💳 Karta: ${fp(cardTot)}</span>`:'');
   $('cs-costs').value=0;$('cs-note').value='';
@@ -5664,13 +5668,34 @@ function _doConfirmGrp(){
   if(newWbs.length===0){checkLastPlayerClosed(sk);}
 }
 function selEPay(m){ePayM=m;$('epo-c').className='po'+(m==='cash'?' cash':'');$('epo-k').className='po'+(m==='card'?' card':'');$('epo-f').className='po'+(m==='invoice'?' invoice':'');}
-function confirmEPay(){if(!confirm('Naozaj zmeniť spôsob platby?'))return;const w=closed.find(c=>c.id===ePayId);if(w&&ePayM){w.payM=ePayM;PBS.markBill(w.id);}cm('m-epay');save();rClosed();toast(t('toast-pay-changed'));}
+function confirmEPay(){
+  if(!confirm('Naozaj zmeniť spôsob platby?'))return;
+  const w=closed.find(c=>c.id===ePayId);
+  if(w&&ePayM){
+    w.payM=ePayM;
+    // ✅ v4h: zmena spôsobu platby musí zrušiť aj rozdelenie po položkách.
+    //    Predtým sa prepísal len w.payM a položky s vlastným i.payM ostali —
+    //    používateľ zvolil „všetko hotovosť" a účet ďalej ukazoval Hotovosť + Karta.
+    (w.items||[]).forEach(i=>{delete i.payM;});
+    // Sprepitné ide tam, kam sa účet platí (zadáva sa na termináli)
+    if(w.tip)w.tip.m=(ePayM==='invoice')?'cash':ePayM;
+    PBS.markBill(w.id);
+  }
+  cm('m-epay');save();rClosed();
+  if($('p-spravca')?.classList.contains('on'))rSpravca();
+  toast(t('toast-pay-changed'));
+}
 function openEPayM(id){ePayId=id;const w=closed.find(c=>c.id===id);ePayM=w?w.payM:'cash';$('epo-c').className='po'+(ePayM==='cash'?' cash':'');$('epo-k').className='po'+(ePayM==='card'?' card':'');$('epo-f').className='po'+(ePayM==='invoice'?' invoice':'');om('m-epay');}
 // ══ REOPEN ══
-function openReopen(id){reopW=closed.find(c=>c.id===id);if(!reopW)return;$('m-reopen-b').innerHTML=`<p style="font-size:13px;color:var(--t2);margin-bottom:9px;">Znovu otvoriť <strong style="color:var(--t1);">${reopW.name}</strong>?</p><p style="font-size:11px;color:var(--t3);">Uzavreté: ${fDT(reopW.closedAt)}</p>`;om('m-reopen');}
+function openReopen(id){reopW=closed.find(c=>c.id===id);if(!reopW)return;$('m-reopen-b').innerHTML=`<p style="font-size:13px;color:var(--t2);margin-bottom:9px;">Znovu otvoriť <strong style="color:var(--t1);">${escHtml(reopW.name)}</strong>?</p><p style="font-size:11px;color:var(--t3);">Uzavreté: ${fDT(reopW.closedAt)}</p>`;om('m-reopen');}
 function confirmReopen(){
   if(!reopW)return;
   const w={...reopW};
+  // ✅ v4h: účet sa vracia medzi OTVORENÉ → nesmie si niesť údaje o zaplatení.
+  //    Sprepitné aj rozdelenie po položkách patria k platbe, ktorá sa práve ruší.
+  //    Inak by pri opätovnom zaplatení „prežilo" staré sprepitné alebo staré delenie.
+  delete w.tip;
+  w.items=(w.items||[]).map(i=>{const c={...i};delete c.payM;return c;});
   // ✅ Otvor účet späť do JEHO vlastnej akcie (nie do náhodnej aktuálnej / žiadnej).
   //    Predtým sa pushoval do getWbs() = wbMap[curSid]; keď curSid nebol jeho session
   //    (napr. "Bez session"), setWbs sa preskočilo a hráč sa STRATIL.
@@ -5744,7 +5769,7 @@ function openVrp(){
   const wbs=getWbs();const w=wbs.find(w=>w.id===selId);if(!w||!w.items.length){toast(t('toast-no-items'));return;}
   const tot=billAmt(w),round=Math.round(tot/0.05)*0.05,rnd=round-tot;const now=new Date();const s=getSess();
   const rows=w.items.map(i=>{const d=i.disc||0;const lp=i.price*i.qty*(1-d/100);return`  ${escHtml(i.name.padEnd(20).slice(0,20))} ${String(i.qty).padStart(3)}× €${i.price.toFixed(2).padStart(6)} = €${lp.toFixed(2).padStart(7)}${d>0?` -${d}%`:''}`;}).join('\n');
-  $('m-vrp-b').innerHTML=`<div class="vrp">POKLADNIČNÝ DOKLAD\n${biz.name||''}\nIČO: ${biz.ico||'—'}  DIČ: ${biz.dic||'—'}\n${biz.addr||''}\nAreál: ${s?.arena||'—'}  Inštruktor: ${s?.instructor||'—'}\n${'─'.repeat(40)}\nZákazník: ${escHtml(w.name)}\nDátum: ${now.toLocaleDateString('sk-SK')} ${now.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'})}\n${'─'.repeat(40)}\n${rows}\n${'─'.repeat(40)}\nCELKOM:       ${('€'+round.toFixed(2)).padStart(10)}\nDPH (20%):    ${('€'+(tot*0.2/1.2).toFixed(2)).padStart(10)}\n${'─'.repeat(40)}</div><div style="font-size:11px;color:var(--t3);margin-top:7px;">VRP2 → Nový doklad → zadaj → vydaj</div>`;
+  $('m-vrp-b').innerHTML=`<div class="vrp">POKLADNIČNÝ DOKLAD\n${escHtml(biz.name||'')}\nIČO: ${escHtml(biz.ico||'—')}  DIČ: ${escHtml(biz.dic||'—')}\n${escHtml(biz.addr||'')}\nAreál: ${s?.arena||'—'}  Inštruktor: ${s?.instructor||'—'}\n${'─'.repeat(40)}\nZákazník: ${escHtml(w.name)}\nDátum: ${now.toLocaleDateString('sk-SK')} ${now.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'})}\n${'─'.repeat(40)}\n${rows}\n${'─'.repeat(40)}\nCELKOM:       ${('€'+round.toFixed(2)).padStart(10)}\nDPH (20%):    ${('€'+(tot*0.2/1.2).toFixed(2)).padStart(10)}\n${'─'.repeat(40)}</div><div style="font-size:11px;color:var(--t3);margin-top:7px;">VRP2 → Nový doklad → zadaj → vydaj</div>`;
   om('m-vrp');
 }
 // ══ OPEN ══
@@ -5899,7 +5924,7 @@ function rOpen(){
               <div class="wi">
                 <div class="wn">${escHtml(w.name)}</div>
                 <div class="wm">
-                  ${pk?`<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:99px;background:${pk.bg};color:${pk.col};">${pk.name}</span>`:''}
+                  ${pk?`<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:99px;background:${pk.bg};color:${pk.col};">${escHtml(pk.name)}</span>`:''}
                   ${pk&&pk.isPB?`<span style="font-size:9px;color:${(()=>{const u=w.bUsed||0,t=totBalls(w),p=t>0?u/t:0;return p<.6?'var(--grn)':p<.85?'var(--amb)':'var(--red)'})()};">🔴${w.bUsed||0}/${totBalls(w)}</span>`:''}
                   ${pk&&pk.drinks?`<span style="font-size:9px;padding:1px 4px;border-radius:99px;background:${dFree>0?'var(--gbg)':'var(--bg3)'};color:${dFree>0?'var(--grn)':'var(--t3)'};">🥤${dFree>0?dFree+'× free':'✓'}</span>`:''}
                 </div>
@@ -6074,7 +6099,7 @@ function rClosed(){
     const grpCash=grp.reduce((s,w)=>s+wCashAmt(w),0);
     const grpCard=grp.reduce((s,w)=>s+wCardAmt(w),0);
     const grpInv=grp.reduce((s,w)=>s+wInvoiceAmt(w),0);
-    const fw=grp[0];const lbl=(fw.sArena&&fw.sArena!=='—')?`${fw.sArena} · ${fw.sAct||'?'}`:`Akcia ${gi+1}`;
+    const fw=grp[0];const lbl=(fw.sArena&&fw.sArena!=='—')?`${escHtml(fw.sArena)} · ${escHtml(fw.sAct||'?')}`:`Akcia ${gi+1}`;
     const ded=de[key];const sess=sessArr.find(s=>s.key===key);
     const {startStr,endStr}=buildTimeStr(ded,sess,grp);
     const pout=pouts[key];
@@ -6082,8 +6107,8 @@ function rClosed(){
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:600;">${lbl}</div>
         <div style="font-size:10px;color:var(--t3);margin-top:2px;">${startStr} – ${endStr}</div>
-        <div style="font-size:10px;color:var(--t3);">${fw.sInstr||'—'} · ${grp.length} účtov · 💵${fp(grpCash)} 💳${fp(grpCard)}</div>
-        ${pout?`<div style="font-size:10px;color:var(--amb);margin-top:2px;">💰 Odmena: ${fp(pout.amt)}${pout.costs?` + náklady: ${fp(pout.costs)}`:''}${pout.note?' – '+pout.note:''}</div>`:''}
+        <div style="font-size:10px;color:var(--t3);">${escHtml(fw.sInstr||'—')} · ${grp.length} účtov · 💵${fp(grpCash)} 💳${fp(grpCard)}</div>
+        ${pout?`<div style="font-size:10px;color:var(--amb);margin-top:2px;">💰 Odmena: ${fp(pout.amt)}${pout.costs?` + náklady: ${fp(pout.costs)}`:''}${pout.note?' – '+escHtml(pout.note):''}</div>`:''}
       </div>
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0;margin-left:8px;">
         <span style="font-size:14px;font-weight:700;color:var(--grn);">${fp(grpTot)}</span>
@@ -6447,7 +6472,7 @@ function rAkcie(){
       <div style="display:flex;gap:12px;font-size:11px;margin-bottom:7px;"><span style="color:var(--grn);">💵 ${fp(cash)}</span><span style="color:var(--blu);">💳 ${fp(card)}</span></div>
       ${dl?`<div style="font-size:11px;color:var(--t2);margin-bottom:7px;">🥤 ${dl}</div>`:''}
       ${note?`<div style="background:var(--bg3);border-radius:var(--rs);padding:9px;font-size:12px;color:var(--t2);line-height:1.6;margin-bottom:9px;border-left:2px solid var(--blu);">📝 ${note}</div>`:''}
-      ${pout?`<div class="pbox"><div style="font-size:10px;font-weight:700;color:var(--amb);text-transform:uppercase;margin-bottom:6px;">💰 Výplata</div><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:var(--amb);">${fp(pout.amt)}<span style="font-size:11px;color:var(--t3);">${instrLabel(s)}</span></div>${pout.costs?`<div style="font-size:11px;color:var(--t2);margin-top:3px;">Iné náklady: ${fp(pout.costs)}</div>`:''}${pout.note?`<div style="font-size:11px;color:var(--t2);">${pout.note}</div>`:''}</div>`:''}
+      ${pout?`<div class="pbox"><div style="font-size:10px;font-weight:700;color:var(--amb);text-transform:uppercase;margin-bottom:6px;">💰 Výplata</div><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:var(--amb);">${fp(pout.amt)}<span style="font-size:11px;color:var(--t3);">${instrLabel(s)}</span></div>${pout.costs?`<div style="font-size:11px;color:var(--t2);margin-top:3px;">Iné náklady: ${fp(pout.costs)}</div>`:''}${pout.note?`<div style="font-size:11px;color:var(--t2);">${escHtml(pout.note)}</div>`:''}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -6667,12 +6692,12 @@ function initArenaFilter(){
   const el=$('arena-filter');if(!el)return;
   const allArenas=[...new Set(closed.map(w=>w.sArena||'—').filter(a=>a!=='—')),...arenas];
   const unique=[...new Set(allArenas)];
-  el.innerHTML=unique.map(a=>`<span class="af-chip ${sSelectedArenas.has(a)?'on':''}" onclick="toggleArena('${a}')">${a}</span>`).join('');
+  el.innerHTML=unique.map(a=>`<span class="af-chip ${sSelectedArenas.has(a)?'on':''}" onclick="toggleArena('${jsq(a)}')">${escHtml(a)}</span>`).join('');
   // ✅ FIX 7: Instructor filter
   const iel=$('instr-filter');if(!iel)return;
   const allInstrs=[...new Set(closed.map(w=>w.sInstr||'—').filter(i=>i!=='—')),...instructors];
   const uInstrs=[...new Set(allInstrs)];
-  iel.innerHTML=uInstrs.map(i=>`<span class="af-chip ${sSelectedInstructors.has(i)?'on':''}" onclick="toggleInstructor('${i}')">${i}</span>`).join('');
+  iel.innerHTML=uInstrs.map(i=>`<span class="af-chip ${sSelectedInstructors.has(i)?'on':''}" onclick="toggleInstructor('${jsq(i)}')">${escHtml(i)}</span>`).join('');
   // Payment type filter chips
   const pel=$('paytype-filter');if(!pel)return;
   pel.innerHTML=Object.entries(PAY_TYPES).map(([k,v])=>`<span class="af-chip ${sSelectedPayTypes.has(k)?'on':''}" onclick="togglePayType('${k}')">${v.label}</span>`).join('');
@@ -6820,7 +6845,7 @@ function rSpravca(){
         <div style="flex:1;padding:10px 12px;min-width:0;">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">
             <span style="font-size:13px;font-weight:700;color:var(--t1);">${escHtml(fw.sArena||'—')}</span>
-            <span style="font-size:10px;font-weight:600;padding:1px 7px;border-radius:99px;background:${act.includes('airsoft')?'var(--gbg)':act.includes('laser')?'var(--tbg)':act.includes('nerf')?'var(--abg)':act.includes('gel')?'var(--bbg)':'var(--rbg)'};color:${act.includes('airsoft')?'var(--grn)':act.includes('laser')?'var(--tel)':act.includes('nerf')?'var(--amb)':act.includes('gel')?'var(--blu)':'var(--red)'};">${fw.sAct||'—'}</span>
+            <span style="font-size:10px;font-weight:600;padding:1px 7px;border-radius:99px;background:${act.includes('airsoft')?'var(--gbg)':act.includes('laser')?'var(--tbg)':act.includes('nerf')?'var(--abg)':act.includes('gel')?'var(--bbg)':'var(--rbg)'};color:${act.includes('airsoft')?'var(--grn)':act.includes('laser')?'var(--tel)':act.includes('nerf')?'var(--amb)':act.includes('gel')?'var(--blu)':'var(--red)'};">${escHtml(fw.sAct||'—')}</span>
             ${pout?`<span style="font-size:10px;padding:1px 7px;border-radius:99px;background:var(--abg);color:var(--amb);">💰 ${fp(pout.amt)}</span>`:''}
             ${grpInv>0?`<span style="font-size:10px;padding:1px 7px;border-radius:99px;background:${sessInvPaid?'var(--pbg)':'var(--abg)'};color:${sessInvPaid?'var(--pur)':'var(--amb)'};">${sessInvPaid?'🧾✅':'🧾⏳'} ${fp(grpInv)}</span>`:''}
           </div>
@@ -6986,7 +7011,7 @@ function rMoje(){
     const ded=de[key];const sess=sessArr.find(s=>s.key===key);
     const {startStr,endStr}=buildTimeStr(ded,sess,grp);
     const sessRun=sess?sessRunSuffix(sess):(fw.sCalRunNumber&&fw.sCalRunNumber>1?' ('+fw.sCalRunNumber+')':'');
-    const lbl=(fw.sArena&&fw.sArena!=='—')?`${fw.sArena} · ${fw.sAct||'?'}${sessRun}`:`Akcia ${gi+1}${sessRun}`;
+    const lbl=(fw.sArena&&fw.sArena!=='—')?`${escHtml(fw.sArena)} · ${escHtml(fw.sAct||'?')}${sessRun}`:`Akcia ${gi+1}${sessRun}`;
     const pout=pouts[key];const note=notes[key]||'';
     const shot=grp.reduce((t,w)=>t+Math.min(w.bUsed||0,totBalls(w)),0);
     const distrib=grp.reduce((t,w)=>t+totBalls(w),0);
@@ -7219,7 +7244,7 @@ function rAnalyzy(){
         <th style="text-align:right;padding:4px 6px;">Tržby</th>
       </tr>
       ${prodArr.map(p=>`<tr style="border-bottom:.5px solid var(--b1);">
-        <td style="padding:4px 6px;color:var(--t2);">${escHtml(p.name)}<br><small style="color:var(--t3);">${p.cat}</small></td>
+        <td style="padding:4px 6px;color:var(--t2);">${escHtml(p.name)}<br><small style="color:var(--t3);">${escHtml(p.cat)}</small></td>
         <td style="text-align:center;padding:4px 6px;font-weight:600;">${p.count}</td>
         <td style="text-align:center;padding:4px 6px;color:var(--t3);">${totalRev>0?(p.rev/totalRev*100).toFixed(1):0}%</td>
         <td style="text-align:right;padding:4px 6px;color:var(--grn);">${fp(p.rev)}</td>
@@ -7786,7 +7811,7 @@ function exportPeriod(){
   XLSX.writeFile(wb,`ProPaintball_report_${fFrom?fD(fFrom.toISOString()).replace(/\./g,'-'):'vsetko'}.xlsx`);toast('Períodický export OK');
 }
 // ══ SETTINGS ══
-function rPM(){$('pm-l').innerHTML=prods.map(p=>`<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:.5px solid var(--b1);"><span style="font-size:14px;width:22px;text-align:center;">${p.emoji}</span><span style="flex:1;font-size:12px;">${escHtml(p.name)}<small style="color:var(--t3);font-size:9px;margin-left:4px;">${p.cat}</small></span><input style="width:60px;font-size:12px;padding:4px 6px;background:var(--bg3);border:.5px solid var(--b2);border-radius:var(--rx);color:var(--t1);" type="number" value="${p.price}" min="0" step="0.5" onchange="updP(${p.id},this.value)"/><button class="btn xs R" onclick="delP(${p.id})">✕</button></div>`).join('');}
+function rPM(){$('pm-l').innerHTML=prods.map(p=>`<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:.5px solid var(--b1);"><span style="font-size:14px;width:22px;text-align:center;">${escHtml(p.emoji)}</span><span style="flex:1;font-size:12px;">${escHtml(p.name)}<small style="color:var(--t3);font-size:9px;margin-left:4px;">${escHtml(p.cat)}</small></span><input style="width:60px;font-size:12px;padding:4px 6px;background:var(--bg3);border:.5px solid var(--b2);border-radius:var(--rx);color:var(--t1);" type="number" value="${p.price}" min="0" step="0.5" onchange="updP(${p.id},this.value)"/><button class="btn xs R" onclick="delP(${p.id})">✕</button></div>`).join('');}
 function updP(id,v){const p=prods.find(x=>x.id===id);if(p){p.price=parseFloat(v)||0;save();rProds();}}
 function delP(id){prods=prods.filter(p=>p.id!==id);save();rProds();rPM();}
 function addProd2(){const n=$('np-n').value.trim(),pr=parseFloat($('np-p').value)||0,cat=$('np-c').value,em=$('np-e').value.trim()||'🎯';if(!n){toast('Zadaj názov');return;}prods.push({id:nextId++,name:n,price:pr,cat,emoji:em});$('np-n').value='';$('np-p').value='';save();rProds();rPM();toast('"'+n+'" pridaný');}
@@ -9037,7 +9062,7 @@ async function _importAndStartSess(reservation,signups){
     });
   }
   if(reservation.instructor&&currentUser){
-    const instrPill=document.querySelector(`.pill[data-g="instructor"][data-v="${reservation.instructor}"]`);
+    const instrPill=document.querySelector(`.pill[data-g="instructor"][data-v="${escHtml(reservation.instructor)}"]`);
     if(instrPill&&currentUser.name===reservation.instructor&&!document.querySelector('.pill[data-g="instructor"].on')){instrPill.classList.add('on');setAV('instructor',reservation.instructor);}
   }
   // Nastav počet hráčov na 0 — nebudeme generovať anonymous
@@ -9083,7 +9108,7 @@ function _startSessFromReservationDirect(reservation){
     }
     // Pre-select instructor pill (only if already matches logged-in user)
     if(reservation.instructor&&currentUser){
-      const instrPill=document.querySelector(`.pill[data-g="instructor"][data-v="${reservation.instructor}"]`);
+      const instrPill=document.querySelector(`.pill[data-g="instructor"][data-v="${escHtml(reservation.instructor)}"]`);
       if(instrPill&&currentUser.name===reservation.instructor){
         if(!document.querySelector('.pill[data-g="instructor"].on')){instrPill.classList.add('on');setAV('instructor',reservation.instructor);}
       }
