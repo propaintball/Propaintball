@@ -1519,7 +1519,7 @@ function saveAll(){
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.08.24a';
+const APP_VERSION='2026.08.24b';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -2720,7 +2720,11 @@ async function sbPush(){
     //    naďalej ČÍTA, takže staré zálohy zostávajú dostupné.
     // Push aktívne session riadky + nastavenia
     // ✅ Preskočiť _remote sessions (patria inému zariadeniu) — nikdy ich neprepísať stale dátami
-    const tasks=sessArr.filter(s=>!s._remote).map(s=>sbPushSession(s.key));
+    // ✅ v4k: `_remote` akcia (prišla z iného zariadenia) sa štandardne neposiela, aby sme
+    //    ju neprepísali zastaranými dátami. Ak sme ju však sami zmenili (je v `_dirtySess`),
+    //    poslať ju MUSÍME — inak pridaný inštruktor či opravená výplata z tohto zariadenia
+    //    nikdy neodíde. Konflikt už rieši `mts` (novší vyhráva).
+    const tasks=sessArr.filter(s=>!s._remote||_dirtySess.has(s.key)).map(s=>sbPushSession(s.key));
     tasks.push(sbPushSettings());
     // Push aj uzavreté (historické) sessie ako session riadky — aby ich iné zariadenia vedeli pullnúť
     // ✅ v4: posielajú sa len akcie, ktoré sa od posledného Pushu naozaj zmenili.
@@ -2801,6 +2805,18 @@ let _syncTouched=false;
 function _mergeSessFromCloud(d){
   if(!d||!d.sess||!d.sess.key)return;
   const key=d.sess.key;
+  // ✅ v4k: metadáta akcie (inštruktori, aréna, aktivita) prevezmi aj vtedy, keď je akcia
+  //    UZAVRETÁ — merge ich predtým riešil len vo vetve pre aktívne akcie, takže inštruktor
+  //    pridaný k už uzavretej akcii sa na iné zariadenie nikdy nedostal.
+  {
+    const _es=sessArr.find(x=>x.key===key);
+    if(_es&&(d.sess.mts||0)>(_es.mts||0)){
+      ['arena','activity','instructor','instructors','date','time','calRunNumber','note'].forEach(f=>{
+        if(d.sess[f]!==undefined)_es[f]=d.sess[f];
+      });
+      _es.mts=d.sess.mts;_syncTouched=true;
+    }
+  }
   // ✅ TOMBSTONE — akcia bola vymazaná; nepridávaj späť, len ju istotne odstráň lokálne.
   if(isTombstoned(key)){applyTombstones(lTombstones());return;}
 
@@ -5413,7 +5429,7 @@ function confirmAddInstructor(){
   if(!u){$('add-instr-err').textContent=t('toast-wrong-pw-instr');$('add-instr-pw-input').value='';$('add-instr-pw-input').focus();return;}
   const sess=getSess();if(!sess)return;
   if(!sess.instructors)sess.instructors=[sess.instructor].filter(Boolean);
-  if(!sess.instructors.includes(name)){sess.instructors.push(name);sess.mts=Date.now();save();}
+  if(!sess.instructors.includes(name)){sess.instructors.push(name);sess.mts=Date.now();markSessDirty(sess.key);save();}
   cm('m-add-instr');
   showSessModal();
   toast('✅ '+name+' pridaný do akcie');
@@ -5930,7 +5946,8 @@ function confirmCloseSess(){
   const _closeInstrs=getSessionInstructors(savedSess);
   const _n=Math.max(1,_closeInstrs.length);const _perPay=Math.round((pay/_n)*100)/100;
   const _instrPay={};_closeInstrs.forEach((nm,i)=>{_instrPay[nm]=i===_n-1?Math.round((pay-_perPay*(_n-1))*100)/100:_perPay;});
-  const pouts=lPouts();pouts[savedKey]={amt:pay,costs,note,type:'manual',instructors:_closeInstrs.slice(),instrPay:_instrPay};sPouts(pouts);
+  const pouts=lPouts();pouts[savedKey]={amt:pay,costs,note,type:'manual',instructors:_closeInstrs.slice(),instrPay:_instrPay,mts:Date.now()};sPouts(pouts);
+  markSessDirty(savedKey); // ✅ v4k: bez pečiatky a fronty sa odmena na iné zariadenia nedostala
   // ✅ Remove session from active sessArr + wbMap so it disappears from top bar & start screen
   sessArr=sessArr.filter(s=>s.key!==savedKey);
   delete wbMap[savedKey];
@@ -6876,9 +6893,19 @@ function _poutDefaultAmt(){
   return Math.round(_poutPerInstr()/0.5)*0.5; // fixed = pevná suma podľa aktivity
 }
 function _poutTotal(){return poutInstrs.reduce((s,it)=>s+(parseFloat(it.amt)||0),0);}
+// Suma, ktorá bola pre túto akciu naozaj ULOŽENÁ pred otvorením modálu (null = žiadna).
+// Modál si sumy inštruktorov dopočítava — pri starších výplatách bez rozpisu (`instrPay`)
+// sa tým celková suma ticho zmenila (35 € pre 1 inštruktora → 70 € pre 2) a v zoznamoch
+// bolo iné číslo ako v modáli. Teraz sa rozdiel VÝSLOVNE zobrazí, nech je to vedomé rozhodnutie.
+let _poutStoredAmt=null;
 function _syncPoutTotal(){const tot=_poutTotal();const a=$('po-amt');if(a)a.value=tot.toFixed(2);
   const info=$('m-pout-i');if(info){const per=_poutPerInstr();const n=Math.max(1,poutInstrs.length);
-    info.innerHTML=`<strong style="color:var(--t1);">Tržby:</strong> ${fp(poutTot)}<br>Pevná odmena / inštruktor: <strong style="color:var(--amb);">${fp(per)}</strong><br>Odmena spolu: <strong style="color:var(--amb);">${fp(tot)}</strong>${n>1?` <span style="font-size:10px;color:var(--t3);">(${n} inštruktori)</span>`:''}`;}
+    const diff=(_poutStoredAmt!=null&&Math.abs(tot-_poutStoredAmt)>0.005);
+    info.innerHTML=`<strong style="color:var(--t1);">Tržby:</strong> ${fp(poutTot)}<br>Pevná odmena / inštruktor: <strong style="color:var(--amb);">${fp(per)}</strong><br>Odmena spolu: <strong style="color:var(--amb);">${fp(tot)}</strong>${n>1?` <span style="font-size:10px;color:var(--t3);">(${n} inštruktori)</span>`:''}`
+    +(diff?`<div style="margin-top:8px;padding:7px 9px;background:var(--abg);border:1px solid var(--abd);border-radius:8px;color:var(--amb);font-size:11px;line-height:1.5;">
+        ⚠️ <strong>Uložená odmena bola ${fp(_poutStoredAmt)}</strong>, tu je dopočítaná na <strong>${fp(tot)}</strong>
+        (${n} ${n===1?'inštruktor':(n<5?'inštruktori':'inštruktorov')} × pevná suma).<br>
+        Uloží sa až po kliknutí na <em>Uložiť výplatu</em> — ak je správna pôvodná suma, zavri okno cez <em>Zrušiť</em>.</div>`:'');}
 }
 function renderPoutInstrs(){
   const list=$('po-instr-list');if(list){
@@ -6923,6 +6950,7 @@ function openPout(key,tot){
   $('po-hrs').value=ex&&ex.hrs?ex.hrs:5;
   $('po-h-row').style.display=$('po-type').value==='hourly'?'block':'none';
   $('po-costs').value=ex?ex.costs||0:0;$('po-note').value=ex?ex.note||'':'';
+  _poutStoredAmt=(ex&&ex.amt!=null)?ex.amt:null;
   renderPoutInstrs();_syncPoutTotal();
   om('m-pout');
 }
