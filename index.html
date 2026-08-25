@@ -1530,7 +1530,7 @@ function saveAll(){
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.08.24h';
+const APP_VERSION='2026.08.24i';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1567,7 +1567,11 @@ async function loginUser(nm,pw){
 }
 function logoutUser(){
   currentUser=null;LS.s('pb_user',null);admUnlocked=false;
-  // NOTE: pb_remembered is NOT cleared — user will be auto-logged next time (Návrh C)
+  // ✅ v4m: pri odhlásení zamkni aj admin sekciu Nastavení. `admUnlocked=false` samo
+  //    nestačilo — blok `sett-c` mal po prihlásení natvrdo `display:block` a zostával
+  //    otvorený. Kľúč z neho síce viditeľný nebol, ale otvorená admin sekcia po
+  //    odhlásení je zbytočné riziko.
+  try{if(typeof lockSett==='function')lockSett();}catch(e){}
   updateTabVisibility();updateStartTabs();updateUserBtn();
 }
 function forgetAllUsers(){
@@ -4358,6 +4362,10 @@ function gT(n){
   if((n==='spravca'||n==='analyzy')&&!currentUser){showAdmLogin();return;}
   if(n==='analyzy'&&!isAdmin()){toast(t('toast-admin-only'));return;}
   if(n==='moje'&&!currentUser){showAdmLogin();return;}
+  // ✅ v4m: kontrola MUSÍ byť pred prepnutím karty. Predtým sa karta Nastavenia
+  //    prepla a až potom vyskočilo prihlásenie — obsah bol síce skrytý zámkom,
+  //    ale zámok sa nestihol zobraziť. Poriadok, nie diera.
+  if(n==='sett'&&!currentUser){showAdmLogin();return;}
   TABS.forEach(t=>{const el=$('p-'+t);if(el)el.classList.toggle('on',t===n);});
   document.querySelectorAll('.tab').forEach(el=>{
     const t=el.getAttribute('onclick')?.match(/gT\('(\w+)'/)?.[1];
@@ -4374,7 +4382,6 @@ function gT(n){
   }
   if(n==='moje')rMoje();
   if(n==='sett'){
-    if(!currentUser){showAdmLogin();return;}
     // Always show settings, but admin section requires admin role
     if(isAdmin()){admUnlocked=true;}
     rPM();rSL('al-l',arenas,'arena');rSL('il-l',instructors,'instructor');rSL('acl-l',activities,'activity');fillSett();
