@@ -1215,7 +1215,18 @@ const DEF_P=[
   {id:36,name:'Poukaz',             price:0,   cat:'Záloha a poukaz', emoji:'🎫', isVoucher:true},
 ];
 // ══ STORAGE ══
-const LS={g:(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}},s:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){console.error('[LS] Save failed for',k,e);if(e.name==='QuotaExceededError'){dot('!','var(--red)');if(typeof PBS!=='undefined')PBS.emergencyRelief(k);}}}}
+let _lsWarn=0;
+const LS={g:(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}},
+  s:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){
+    console.error('[LS] Save failed for',k,e);
+    if(e.name==='QuotaExceededError'){
+      dot('!','var(--red)');
+      if(typeof PBS!=='undefined')PBS.emergencyRelief(k);
+      // ✅ v4m: zlyhaný zápis musí byť VIDNO. Predtým sa iba zafarbila bodka a hlásilo
+      //    sa to do konzoly — obsluha pri pulte o probléme nemala ako vedieť.
+      const t=Date.now();if(t-_lsWarn>60000){_lsWarn=t;
+        try{toast('⚠️ Úložisko zariadenia je plné — sprav export zálohy a reštartuj appku.');}catch(_){}}
+    }}}}
 
 // ══════════════════════════════════════════════════════════════════
 // PBS — Persistent Storage Engine v4  (IndexedDB)
@@ -1519,7 +1530,7 @@ function saveAll(){
 // ══ STATE ══
 // ✅ Verzia appky — po nahratí novej verzie sa musí zmeniť číslo na úvodnej obrazovke.
 //    Ak vidíš staré číslo, prehliadač drží starú verziu z cache (tvrdý reload).
-const APP_VERSION='2026.08.24e';
+const APP_VERSION='2026.08.24h';
 let prods=LS.g('pb_p',DEF_P);
 // ✅ Migrácia: pridaj nové default balíky (Agentúra AS id 37) ak chýbajú v uloženom zozname
 [37].forEach(mid=>{if(!prods.find(p=>p.id===mid)){const def=DEF_P.find(p=>p.id===mid);if(def)prods.push({...def});}});
@@ -1935,18 +1946,25 @@ function sNotes(n){colSet('notes',n);}
 // Náhrobok nesie ČAS zmazania a ruší len verzie účtu STARŠIE než on — takže oživenie
 // účtu (nová verzia s novším `mts`) náhrobok správne prekoná.
 function lBTomb(){return colGet('btomb');}
-function sBTomb(d){colSet('btomb',d);}
+// Každý zápis náhrobkov zruší index — prestaví sa až pri najbližšom čítaní.
+let _btIdx=null;
+function sBTomb(d){colSet('btomb',d);_btIdx=null;}
 function killBill(w,sKey){
   if(!w||w.id==null)return;
-  const t=lBTomb();t[w.id]={ts:Date.now(),k:sKey||w.sKey||'unknown'};sBTomb(t);
+  const t=lBTomb();t[w.id]={ts:nowS(),k:sKey||w.sKey||'unknown'};sBTomb(t);
   markSessDirty(sKey||w.sKey||'unknown');
 }
 // Náhrobky patriace jednej akcii — do payloadu ide len relevantná časť.
-function bTombFor(key){
-  const out={},t=lBTomb();
-  Object.entries(t).forEach(([id,v])=>{if(v&&v.k===key)out[id]=v.ts;});
-  return out;
+// Bez indexu sa pri Pulle prehľadávala celá mapa náhrobkov pre KAŽDÚ akciu
+// (namerané 6 ms na akciu pri 36 000 náhrobkoch = vyše minúty na jeden Pull).
+function bTombIdx(){
+  if(_btIdx)return _btIdx;
+  const m=new Map();
+  Object.entries(lBTomb()).forEach(([id,v])=>{
+    const k=(v&&v.k)||'unknown';let o=m.get(k);if(!o){o={};m.set(k,o);}o[id]=v.ts;});
+  _btIdx=m;return m;
 }
+function bTombFor(key){return{...(bTombIdx().get(key)||{})};}
 
 function lTombstones(){return colGet('tomb');}
 function sTombstones(d){colSet('tomb',d);}
@@ -2193,6 +2211,62 @@ function deleteCust(){
 // ══════════════════════════════════════════════════════════════════
 let sbTok=LS.g('pb_sb_tok',null);          // {access,refresh,exp}
 function sbAuthed(){return !!(sbTok&&sbTok.access);}
+// ══════════════════════════════════════════════════════════════════
+//  SPOLOČNÝ ČAS  (v4m)
+//
+//  Zlučovanie rozhoduje podľa pečiatok `mts`. Kým sa brali z hodín zariadenia,
+//  stačil posun o MINÚTU a iPad s predbiehajúcimi hodinami prepísal cudziu novšiu
+//  zmenu. Pečiatka omylom nastavená do budúcnosti dokonca záznam zamkla — nedal sa
+//  opraviť, kým ten čas reálne neuplynul.
+//
+//  Riešenie: pečiatkuje sa časom SUPABASE SERVERA. Odchýlku zisťujeme z hlavičky
+//  `Date` v odpovediach (bez extra requestu) a držíme si ju ako posun. Všetky
+//  zariadenia tak stavajú na tých istých hodinách bez ohľadu na svoje nastavenie.
+//  Offline sa použijú vlastné hodiny s posledným známym posunom.
+// ══════════════════════════════════════════════════════════════════
+let _tOff=+LS.g('pb_toff',0)||0;
+let _tWarned=false,_lastStamp=0;
+// Pečiatka je STRIKTNE RASTÚCA. Dve zmeny v tej istej milisekunde by inak dostali
+// rovnaké číslo a o víťazovi by rozhodla „bohatosť" záznamu — pri ODOBRATÍ položky
+// z rozrobeného účtu je bohatší práve ten starý stav, takže položka sa vrátila.
+// (Odhalené až pri druhom behu testov; pri prvom sa operácie trafili do rôznych ms.)
+function nowS(){
+  const t=Date.now()+_tOff;
+  _lastStamp=t>_lastStamp?t:_lastStamp+1;
+  return _lastStamp;
+}
+function _noteServerTime(r){
+  try{
+    const h=r&&r.headers&&r.headers.get&&r.headers.get('Date');
+    if(!h)return;
+    const t=Date.parse(h);
+    if(!t||isNaN(t))return;
+    const off=t-Date.now();
+    if(Math.abs(off-_tOff)>1000){_tOff=off;LS.s('pb_toff',off);}
+    if(Math.abs(off)>120000&&!_tWarned){
+      _tWarned=true;
+      console.warn('[čas] hodiny zariadenia sa líšia od servera o '+Math.round(off/1000)+' s');
+      try{toast('⏰ Hodiny tohto zariadenia sa líšia od servera o '+Math.round(Math.abs(off)/60000)
+        +' min. Synchronizácia to zvláda, ale over si nastavenie času.');}catch(e){}
+    }
+  }catch(e){}
+}
+// Pečiatka nesmie byť z budúcnosti. Zlúčený stav sa pred zápisom zrovná na serverový
+// čas — tým sa z dát postupne vyčistia aj pečiatky, ktoré tam nechali zle nastavené
+// hodiny predtým, než sa začal používať spoločný čas.
+function _clampFuture(p){
+  const lim=nowS()+60000;
+  const fix=o=>{if(o&&typeof o==='object'&&+o.mts>lim)o.mts=nowS();};
+  if(!p)return p;
+  fix(p.sess);fix(p.pout);fix(p.deposit);
+  (Array.isArray(p.bills)?p.bills:[]).forEach(fix);
+  (Array.isArray(p.wbs)?p.wbs:[]).forEach(fix);
+  if(+p.noteMts>lim)p.noteMts=nowS();
+  const t=p.tomb&&p.tomb.bills;
+  if(t&&typeof t==='object')Object.keys(t).forEach(k=>{if(+t[k]>lim)t[k]=nowS();});
+  return p;
+}
+
 function sbH(o){
   o=o||{};
   const h={'apikey':sbKey,'Authorization':'Bearer '+((sbTok&&sbTok.access)||sbKey)};
@@ -2443,8 +2517,13 @@ async function runXssSelfTest(){
       sDE({});sDeposits({});
       const rng=[new Date(Date.now()-3650*86400000),new Date(Date.now()+86400000)];
       sFFrom=rng[0];sFTo=rng[1];fFrom=rng[0];fTo=rng[1];aFrom=rng[0];aTo=rng[1];
+      // ⚠️ Zoznam musí obsahovať KAŽDÝ render. `rAkcie` tu roky chýbal a práve v ňom
+      //    sa našla neescapovaná poznámka akcie (audit v4m). Pri pridaní nového renderu
+      //    ho doplň sem, inak ho samotest nikdy nepreverí.
       ['rProds','rWbs','rBill','rOpen','rAppSessBar','rDrk','rPbt','renderCustList','initArenaFilter',
-       'rPM','rStartSL','rClosed','rSpravca','rAnalyzy','rMoje','updMBtn'].forEach(f=>{try{window[f]&&window[f]();}catch(e){}});
+       'rPM','rStartSL','rClosed','rSpravca','rAnalyzy','rMoje','updMBtn',
+       'rAkcie','rPills','rRevS','rSL','rLandingSessions','rLandingReservations',
+       'updSessBadge','updInvBadge'].forEach(f=>{try{window[f]&&window[f]();}catch(e){}});
       [['openVrp','xc1'],['openPout',k1],['openReport',k1],['openNote',k1],['openReopen','xc1'],['openEPayM','xc1'],['openEWbFor','xw1']]
         .forEach(([fn,arg])=>{try{window[fn]&&window[fn](arg,10);}catch(e){}});
       try{selId='xw1';_proceedCloseBill('xw1');}catch(e){}
@@ -2559,7 +2638,7 @@ function markSessDirty(key){if(key)_dirtySess.add(key);}
 // Zavolaj pri KAŽDEJ úprave už uzavretého účtu.
 function touchBill(w){
   if(!w)return;
-  w.mts=Date.now();
+  w.mts=nowS();
   PBS.markBill(w.id);            // starší účet mimo 90-dňového okna sa musí zapísať explicitne
   markSessDirty(w.sKey||'unknown');
 }
@@ -2604,15 +2683,19 @@ function _pickNewer(a,b,rank,tf){
   const sa=JSON.stringify(a),sb=JSON.stringify(b);
   return sa>=sb?a:b;
 }
+// Vstupy z cloudu sú NEDÔVERYHODNÉ — anon kľúčom do tabuľky zapíše ktokoľvek, kto ho má,
+// a chybu môže spraviť aj bot. Jeden poškodený riadok nesmie zhodiť celú synchronizáciu.
+function _arr(x){return Array.isArray(x)?x:[];}
+function _obj(x){return (x&&typeof x==='object'&&!Array.isArray(x))?x:{};}
 function _mergeTomb(a,b){
   const o={};
-  [a,b].forEach(src=>Object.entries(src||{}).forEach(([k,v])=>{const t=+v||0;if(!(o[k]>=t))o[k]=t;}));
+  [a,b].forEach(src=>Object.entries(_obj(src)).forEach(([k,v])=>{const t=+v||0;if(!(o[k]>=t))o[k]=t;}));
   return o;
 }
 // Zlúči dva zoznamy záznamov s `id`. Náhrobok ruší len verzie staršie než on sám.
 function _mergeById(A,B,tomb,mtsFn,rank){
   const m=new Map();
-  const add=arr=>(arr||[]).forEach(x=>{
+  const add=arr=>_arr(arr).forEach(x=>{
     if(!x||x.id==null)return;
     const dead=tomb&&tomb[x.id]!=null&&mtsFn(x)<=tomb[x.id];
     if(dead)return;
@@ -2624,7 +2707,9 @@ function _mergeById(A,B,tomb,mtsFn,rank){
   return [...m.values()].sort((x,y)=>String(x.id).localeCompare(String(y.id)));
 }
 function mergeSessPayload(A,B){
-  if(!A)return B||null;if(!B)return A;
+  if(!A||typeof A!=='object')return (B&&typeof B==='object')?B:null;
+  if(!B||typeof B!=='object')return A;
+  A=_obj(A);B=_obj(B);
   const tomb={
     bills:_mergeTomb(A.tomb&&A.tomb.bills,B.tomb&&B.tomb.bills),
     wbs:_mergeTomb(A.tomb&&A.tomb.wbs,B.tomb&&B.tomb.wbs)
@@ -2636,16 +2721,17 @@ function mergeSessPayload(A,B){
   //  preto tu stačí add-merge a netreba pečiatkovať každé pridanie položky.)
   const wbs=_mergeById(A.wbs,B.wbs,tomb.wbs,_mtsOf,w=>(w.items||[]).length)
               .filter(w=>!closedIds.has(w.id));
-  const sess=_pickNewer(A.sess,B.sess,x=>(x.instructors||[]).length);
+  const sess=_pickNewer(_obj(A.sess),_obj(B.sess),x=>_arr(x.instructors).length);
   // Pri odmene rozhoduje pri zhodnej pečiatke bohatšie zadanie (viac inštruktorov,
   // vyššia suma) — nikdy sa tým nestratí dodatočne priradený inštruktor.
-  const pout=_pickNewer(A.pout,B.pout,x=>((x.instructors||[]).length*1e6+(+x.amt||0)));
+  const pout=_pickNewer(_obj(A.pout).amt!=null?A.pout:null,_obj(B.pout).amt!=null?B.pout:null,
+                        x=>(_arr(x.instructors).length*1e6+(+x.amt||0)));
   const deposit=_pickNewer(A.deposit,B.deposit);
   // Poznámka má VLASTNÚ pečiatku (`noteMts`). Keď sa odvodzovala od `sess.mts`,
   // menila sa po každom zlúčení a výsledok závisel od poradia.
   const note=_pickNewer(
-    A.note!=null?{v:A.note,mts:+A.noteMts||0}:null,
-    B.note!=null?{v:B.note,mts:+B.noteMts||0}:null,
+    typeof A.note==='string'?{v:A.note,mts:+A.noteMts||0}:null,
+    typeof B.note==='string'?{v:B.note,mts:+B.noteMts||0}:null,
     x=>String(x.v||'').length);
   // Uzavretá akcia vyhráva, len ak neostali otvorení hráči.
   const status=wbs.length?'active':((pout||A.status==='closed'||B.status==='closed')?'closed':'active');
@@ -2663,7 +2749,7 @@ function _wbBare(w){const{mts,..._r}=w;return JSON.stringify(_r);}
 function _stampOpenPlayers(key){
   const k=key||curSid;if(!k)return;
   const arr=wbMap[k];if(!Array.isArray(arr))return;
-  const now=Date.now();
+  const now=nowS();
   arr.forEach(w=>{
     if(!w||w.id==null)return;
     const sig=_wbBare(w);
@@ -2674,11 +2760,52 @@ function _stampOpenPlayers(key){
 // za lokálnu zmenu a nezaslúžene by prebil novšie dáta z iného zariadenia.
 function _wbSigSync(arr){(arr||[]).forEach(w=>{if(w&&w.id!=null)_wbSig.set(w.id,_wbBare(w));});}
 
+// ══ DÁVKOVÉ ZLUČOVANIE (v4l) ══
+// `buildSessPayload` aj `applySessPayload` prechádzali CELÉ pole `closed`. Pri Pulle,
+// ktorý zlučuje každú akciu zvlášť, to znamenalo N×M operácií — namerané 37 ms na akciu
+// pri 100 000 účtoch, teda ~7 minút na jeden Pull po dvadsiatich rokoch prevádzky.
+// V dávke sa preto účty raz zaindexujú podľa akcie, počas zlučovania sa pracuje len
+// nad indexom a `closed` sa poskladá jediný raz na konci. Zložitosť klesá na lineárnu.
+let _mBatch=null;
+function mergeBatchBegin(){
+  const m=new Map();
+  closed.forEach(w=>{const k=w.sKey||'unknown';let a=m.get(k);if(!a){a=[];m.set(k,a);}a.push(w);});
+  _mBatch={idx:m,changed:false};
+}
+function mergeBatchEnd(){
+  if(!_mBatch)return false;
+  const b=_mBatch;_mBatch=null;
+  if(b.changed){
+    const out=[];b.idx.forEach(arr=>{for(const w of arr)out.push(w);});
+    out.sort((x,y)=>new Date(y.closedAt||0)-new Date(x.closedAt||0));
+    closed=out;
+  }
+  return b.changed;
+}
+// Účty jednej akcie. Mimo dávky sa index drží v pamäti a prestavuje sa až vtedy,
+// keď sa pole `closed` naozaj zmení. Platnosť sa overuje referenciou a dĺžkou —
+// všetky mutácie v kóde sú buď priradenie nového poľa (`=`, `filter`), alebo
+// `push`/`unshift`, takže obe zachytí. Úpravy vnútri účtu index nerušia, lebo drží
+// tie isté objekty.
+let _bIdx=null,_bIdxRef=null,_bIdxLen=-1;
+function _buildBillIdx(){
+  const m=new Map();
+  for(const w of closed){const k=(w&&w.sKey)||'unknown';let a=m.get(k);if(!a){a=[];m.set(k,a);}a.push(w);}
+  return m;
+}
+function billsIdx(){
+  if(_mBatch)return _mBatch.idx;
+  if(_bIdx&&_bIdxRef===closed&&_bIdxLen===closed.length)return _bIdx;
+  _bIdx=_buildBillIdx();_bIdxRef=closed;_bIdxLen=closed.length;
+  return _bIdx;
+}
+function billsOfSess(key){return billsIdx().get(key)||[];}
+
 // ── Lokálny stav → payload ──
 function buildSessPayload(key,sessOverride){
   let sess=sessOverride||sessArr.find(x=>x.key===key)||null;
   if(!sess){
-    const bs=closed.filter(w=>(w.sKey||'unknown')===key);
+    const bs=billsOfSess(key);
     if(bs.length){const f=bs[0];
       sess={key,arena:f.sArena||'',activity:f.sAct||'',instructor:f.sInstr||'',
             instructors:f.sInstr?[f.sInstr]:[],date:f.sDate||'',time:f.sTime||''};}
@@ -2690,7 +2817,7 @@ function buildSessPayload(key,sessOverride){
   return{
     sess:{...sess,key},
     wbs,
-    bills:closed.filter(w=>(w.sKey||'unknown')===key),
+    bills:billsOfSess(key),
     deposit:deps[key]||null,
     pout:pouts[key]||null,
     note:notes[key]||undefined,
@@ -2705,11 +2832,10 @@ function buildSessPayload(key,sessOverride){
 function applySessPayload(key,p){
   if(!p)return false;
   let ch=false;
-  // 1) uzavreté účty tejto akcie
-  const want=new Map(p.bills.map(b=>[String(b.id),b]));
-  const keep=[];
-  closed.forEach(w=>{
-    if((w.sKey||'unknown')!==key){keep.push(w);return;}
+  // 1) uzavreté účty tejto akcie — pracuje sa len nad ÚČTAMI TEJTO AKCIE
+  const want=new Map(_arr(p.bills).filter(b=>b&&b.id!=null).map(b=>[String(b.id),b]));
+  const mine=billsOfSess(key),keep=[];
+  mine.forEach(w=>{
     const nb=want.get(String(w.id));
     if(!nb){ch=true;return;}                       // zmazaný náhrobkom
     want.delete(String(w.id));
@@ -2717,14 +2843,21 @@ function applySessPayload(key,p){
     else keep.push(w);
   });
   want.forEach(b=>{keep.push(b);PBS.markBill(b.id);ch=true;});   // pribudli z cloudu
-  if(ch)closed=keep;
+  if(ch){
+    if(_mBatch){_mBatch.idx.set(key,keep);_mBatch.changed=true;}
+    else{
+      const rest=closed.filter(w=>(w.sKey||'unknown')!==key);
+      closed=rest.concat(keep);
+      closed.sort((x,y)=>new Date(y.closedAt||0)-new Date(x.closedAt||0));
+    }
+  }
   // 2) otvorení hráči
-  const curW=wbMap[key]||[];
-  if(JSON.stringify(curW)!==JSON.stringify(p.wbs)){
-    if(p.wbs.length)wbMap[key]=p.wbs;else delete wbMap[key];
+  const curW=wbMap[key]||[],newW=_arr(p.wbs);
+  if(JSON.stringify(curW)!==JSON.stringify(newW)){
+    if(newW.length)wbMap[key]=newW;else delete wbMap[key];
     ch=true;
   }
-  _wbSigSync(p.wbs);
+  _wbSigSync(newW);
   // 3) odmena / záloha / poznámka
   const pouts=lPouts();
   if(p.pout){if(JSON.stringify(pouts[key])!==JSON.stringify(p.pout)){pouts[key]=p.pout;sPouts(pouts);ch=true;}}
@@ -2785,6 +2918,7 @@ async function sbPushSession(sessKey, sessOverride){
   let merged=local;
   try{
     const r=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.${encodeURIComponent(sessKey)}&select=payload`,{headers:sbH()});
+    _noteServerTime(r);
     if(r.ok){
       const rows=await r.json();
       if(rows.length&&rows[0].payload)merged=mergeSessPayload(rows[0].payload,local);
@@ -2795,6 +2929,7 @@ async function sbPushSession(sessKey, sessOverride){
     console.warn('[sbPushSession] čítanie pred zápisom zlyhalo',sessKey,e);
     return false;      // bez prečítania cloudu sa NEZAPISUJE — inak by sme mohli prepísať novšie dáta
   }
+  _clampFuture(merged);   // ✅ v4m: pečiatka z budúcnosti by záznam zamkla — zrovnaj ju
   // Zlúčený výsledok premietni aj lokálne — obe strany tak končia na tom istom.
   try{if(applySessPayload(sessKey,merged))saveAll();}catch(e){console.error('[sbPushSession] apply',e);}
   try{
@@ -2851,6 +2986,7 @@ function _settMerge3(cloud,base){
 async function _sbAdoptCloudSettings(){
   try{
     const r=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.pb_settings&select=payload`,{headers:sbH()});
+    _noteServerTime(r);
     if(!r.ok)return;
     const rows=await r.json();
     if(!rows.length||!rows[0].payload)return;
@@ -2956,13 +3092,15 @@ async function sbPush(){
     //    Predtým išiel jeden HTTP request na KAŽDÚ akciu v histórii → po rokoch tisíce
     //    requestov na jedno kliknutie.
     const pushedSig=(await IDB.get('kv','pushedSess'))||{};
+    // ✅ v4l: jeden index namiesto prehľadania celej histórie pre KAŽDÚ akciu.
+    const _idx=billsIdx();
     const closedSessKeys=[...new Set(closed.map(w=>w.sKey).filter(Boolean))];
     const activeSessKeys=new Set(sessArr.map(s=>s.key));
     const _po=lPouts(),_dp=lDeposits(),_nt=lNotes();
     const nowSig={};
     let skipped=0;
     closedSessKeys.filter(k=>!activeSessKeys.has(k)).forEach(k=>{
-      const bills=closed.filter(w=>w.sKey===k);
+      const bills=_idx.get(k)||[];
       const sig=sessContentSig(k,bills,_po,_dp,_nt);
       nowSig[k]=sig;
       if(pushedSig[k]===sig){skipped++;return;}
@@ -3036,15 +3174,20 @@ let _syncTouched=false;
 // Predtým tu bola sada zvláštnych pravidiel (union pre účty, „prvá vyhráva" pre odmenu,
 // metadáta len pri aktívnych akciách). Každé z nich bolo samostatný zdroj divergencie.
 function _mergeSessFromCloud(d){
-  if(!d||!d.sess||!d.sess.key)return;
+  try{_mergeSessFromCloudInner(d);}
+  catch(e){console.error('[merge] poškodený riadok z cloudu — preskočený',d&&d.sess&&d.sess.key,e);}
+}
+function _mergeSessFromCloudInner(d){
+  if(!d||typeof d!=='object'||!d.sess||typeof d.sess!=='object'||!d.sess.key)return;
   const key=d.sess.key;
+  if(typeof key!=='string'&&typeof key!=='number')return;
   // Vymazaná akcia sa nikdy nekriesi.
   if(isTombstoned(key)){applyTombstones(lTombstones());return;}
   const local=buildSessPayload(key);
   const merged=mergeSessPayload(local,d);
   // Náhrobky účtov prijaté z cloudu si ulož, aby ich toto zariadenie ďalej šírilo
   // a aby zmazaný účet nevrátil žiadny neskorší merge.
-  const inc=(d.tomb&&d.tomb.bills)||{};
+  const inc=_obj(d.tomb&&d.tomb.bills);
   if(Object.keys(inc).length){
     const t=lBTomb();let ch=false;
     Object.entries(inc).forEach(([id,ts])=>{if(!t[id]||t[id].ts<ts){t[id]={ts:+ts,k:key};ch=true;}});
@@ -3212,6 +3355,7 @@ async function sbPull(){
     const sr=await fetch(`${sbUrl}/rest/v1/pb_data?id=eq.pb_settings&select=payload`,{
       headers:sbH()
     });
+    _noteServerTime(sr);
     if(sr.ok){const srows=await sr.json();if(srows.length)_applySettings(srows[0].payload);}
     // 1b. Pull zoznam poukazov od ProPaintballBota (id='vouchers')
     pullVouchers();
@@ -3226,8 +3370,10 @@ async function sbPull(){
     ]);
 
     if(sessRows.length){
-      // Merge session riadky (nový formát)
-      sessRows.forEach(row=>_mergeSessFromCloud(row.payload));
+      // Merge session riadky (nový formát) — v jednej dávke, inak by to bolo N×M
+      mergeBatchBegin();
+      try{sessRows.forEach(row=>_mergeSessFromCloud(row.payload));}
+      finally{if(mergeBatchEnd())_syncTouched=true;}
       // VŽDY tiež merguj closed bills z id='main' legacy riadku — obsahuje staré sessie
       // ktoré neboli nikdy pushnuté ako individuálne session riadky
       if(mainR.ok){
@@ -3287,6 +3433,7 @@ async function sbPollSessions(){
         headers:sbH()
       })
     ]);
+    _noteServerTime(r);
     if(!r.ok){_bgPollLock=false;return;}
     _syncTouched=false; // ✅ v4k: vynulovať pred merge — merge si ho nastaví, ak niečo naozaj zmenil
     // Aplikuj tombstones (vymaž akcie zmazané na inom zariadení)
@@ -3298,7 +3445,9 @@ async function sbPollSessions(){
     // Podpis stavu PRED merge (kľúč + počet otvorených hráčov) — na detekciu akejkoľvek zmeny
     const sigBefore=sessArr.map(s=>s.key+':'+((wbMap[s.key]||[]).length)).sort().join('|');
     const curSidBefore=curSid; // Capture BEFORE merge — _mergeSessFromCloud may change curSid
-    rows.forEach(row=>{if(row.payload)_mergeSessFromCloud(row.payload);});
+    mergeBatchBegin();
+    try{rows.forEach(row=>{if(row.payload)_mergeSessFromCloud(row.payload);});}
+    finally{if(mergeBatchEnd())_syncTouched=true;}
     _pruneClosedFromSessArr(); // ✅ uzavreté akcie (s odmenou) nikdy nezostanú v sessArr
 
     const sigAfter=sessArr.map(s=>s.key+':'+((wbMap[s.key]||[]).length)).sort().join('|');
@@ -5571,7 +5720,7 @@ function confirmAddInstructor(){
   if(!u){$('add-instr-err').textContent=t('toast-wrong-pw-instr');$('add-instr-pw-input').value='';$('add-instr-pw-input').focus();return;}
   const sess=getSess();if(!sess)return;
   if(!sess.instructors)sess.instructors=[sess.instructor].filter(Boolean);
-  if(!sess.instructors.includes(name)){sess.instructors.push(name);sess.mts=Date.now();markSessDirty(sess.key);save();}
+  if(!sess.instructors.includes(name)){sess.instructors.push(name);sess.mts=nowS();markSessDirty(sess.key);save();}
   cm('m-add-instr');
   showSessModal();
   toast('✅ '+name+' pridaný do akcie');
@@ -5683,7 +5832,7 @@ function _finalizeAddedAgencyPlayer(wbId){
   const sk=actKey();const sess=sessArr.find(s=>s.key===sk);
   const wbs=wbMap[sk]||[];const w=wbs.find(x=>x.id===wbId);if(!w)return;
   const now=new Date().toISOString();
-  w.closedAt=now;w.mts=Date.now();w.orderIdx=closed.filter(x=>x.sKey===sk).length;w.payM='invoice';
+  w.closedAt=now;w.mts=nowS();w.orderIdx=closed.filter(x=>x.sKey===sk).length;w.payM='invoice';
   w.sKey=sk;w.sArena=sess?.arena;w.sInstr=sess?.instructor;w.sAct=sess?.activity;w.sDate=sess?.date;w.sTime=sess?.time;if(sess?.calRunNumber)w.sCalRunNumber=sess.calRunNumber;
   closed.unshift(w);
   wbMap[sk]=wbs.filter(x=>x.id!==wbId);
@@ -5920,7 +6069,7 @@ function _confirmPayBody(w,wbs){
     const anyCard=_paySplit?Object.values(_paySplit).includes('card'):payM==='card';
     w.tip={amt:Math.round(_payTip*100)/100,m:anyCard?'card':(payM==='invoice'?'cash':payM)};
   }else delete w.tip;
-  w.closedAt=new Date().toISOString();w.mts=Date.now();w.orderIdx=closed.filter(x=>x.sKey===actKey()).length;w.payM=payM;w.justClosed=true;w.sKey=actKey();w.sArena=s?.arena;w.sInstr=s?.instructor;w.sAct=s?.activity;w.sDate=s?.date;w.sTime=s?.time;if(s?.calRunNumber)w.sCalRunNumber=s.calRunNumber;
+  w.closedAt=new Date().toISOString();w.mts=nowS();w.orderIdx=closed.filter(x=>x.sKey===actKey()).length;w.payM=payM;w.justClosed=true;w.sKey=actKey();w.sArena=s?.arena;w.sInstr=s?.instructor;w.sAct=s?.activity;w.sDate=s?.date;w.sTime=s?.time;if(s?.calRunNumber)w.sCalRunNumber=s.calRunNumber;
   closed.unshift(w);const newWbs=wbs.filter(x=>x.id!==pendClose);setWbs(newWbs);
   if(chkd.has(pendClose))chkd.delete(pendClose);if(selId===pendClose)selId=null;
   auditLog('bill-close',w.name+' '+wPayLabel(w)+' '+fp(billAmt(w))+(w.tip?' tip '+fp(w.tip.amt):''));
@@ -6016,7 +6165,7 @@ function openCloseSess(key,bills){
     const now=new Date().toISOString();
     const agBaseIdx=closed.filter(x=>x.sKey===key).length;
     agencyPending.forEach((w,idx)=>{
-      w.closedAt=now;w.mts=Date.now();w.orderIdx=agBaseIdx+idx;w.payM='invoice';w.justClosed=true;
+      w.closedAt=now;w.mts=nowS();w.orderIdx=agBaseIdx+idx;w.payM='invoice';w.justClosed=true;
       w.sKey=key;w.sArena=sess?.arena;w.sInstr=sess?.instructor;w.sAct=sess?.activity;w.sDate=sess?.date;w.sTime=sess?.time;if(sess?.calRunNumber)w.sCalRunNumber=sess.calRunNumber;
       closed.unshift(w);
     });
@@ -6088,7 +6237,7 @@ function confirmCloseSess(){
   const _closeInstrs=getSessionInstructors(savedSess);
   const _n=Math.max(1,_closeInstrs.length);const _perPay=Math.round((pay/_n)*100)/100;
   const _instrPay={};_closeInstrs.forEach((nm,i)=>{_instrPay[nm]=i===_n-1?Math.round((pay-_perPay*(_n-1))*100)/100:_perPay;});
-  const pouts=lPouts();pouts[savedKey]={amt:pay,costs,note,type:'manual',instructors:_closeInstrs.slice(),instrPay:_instrPay,mts:Date.now()};sPouts(pouts);
+  const pouts=lPouts();pouts[savedKey]={amt:pay,costs,note,type:'manual',instructors:_closeInstrs.slice(),instrPay:_instrPay,mts:nowS()};sPouts(pouts);
   markSessDirty(savedKey); // ✅ v4k: bez pečiatky a fronty sa odmena na iné zariadenia nedostala
   // ✅ Remove session from active sessArr + wbMap so it disappears from top bar & start screen
   sessArr=sessArr.filter(s=>s.key!==savedKey);
@@ -6200,7 +6349,7 @@ function _doConfirmGrp(){
     sel[0].tip={amt:Math.round(_grpTip*100)/100,m:(gPayM==='invoice')?'cash':gPayM};
   }
   const grpBaseIdx=closed.filter(x=>x.sKey===sk).length;
-  sel.forEach((w,idx)=>{w.closedAt=new Date().toISOString();w.mts=Date.now();w.orderIdx=grpBaseIdx+idx;w.payM=gPayM;w.justClosed=true;w.sKey=sk;w.sArena=s?.arena;w.sInstr=s?.instructor;w.sAct=s?.activity;w.sDate=s?.date;w.sTime=s?.time;if(s?.calRunNumber)w.sCalRunNumber=s.calRunNumber;closed.unshift(w);if(w.email){const cust=findCustomerByEmail(w.email);if(!cust)addCustomer(w.name,w.email,'',false);}});
+  sel.forEach((w,idx)=>{w.closedAt=new Date().toISOString();w.mts=nowS();w.orderIdx=grpBaseIdx+idx;w.payM=gPayM;w.justClosed=true;w.sKey=sk;w.sArena=s?.arena;w.sInstr=s?.instructor;w.sAct=s?.activity;w.sDate=s?.date;w.sTime=s?.time;if(s?.calRunNumber)w.sCalRunNumber=s.calRunNumber;closed.unshift(w);if(w.email){const cust=findCustomerByEmail(w.email);if(!cust)addCustomer(w.name,w.email,'',false);}});
   const newWbs=wbs.filter(w=>!pendGrp.includes(w.id));setWbs(newWbs);
   pendGrp.forEach(id=>{if(chkd.has(id))chkd.delete(id);});if(pendGrp.includes(selId))selId=null;
   pendGrp=[];   // ✅ dávka spracovaná — ďalší klik už nemá čo robiť
@@ -7021,7 +7170,7 @@ function rAkcie(){
       </div>
       <div style="display:flex;gap:12px;font-size:11px;margin-bottom:7px;"><span style="color:var(--grn);">💵 ${fp(cash)}</span><span style="color:var(--blu);">💳 ${fp(card)}</span></div>
       ${dl?`<div style="font-size:11px;color:var(--t2);margin-bottom:7px;">🥤 ${dl}</div>`:''}
-      ${note?`<div style="background:var(--bg3);border-radius:var(--rs);padding:9px;font-size:12px;color:var(--t2);line-height:1.6;margin-bottom:9px;border-left:2px solid var(--blu);">📝 ${note}</div>`:''}
+      ${note?`<div style="background:var(--bg3);border-radius:var(--rs);padding:9px;font-size:12px;color:var(--t2);line-height:1.6;margin-bottom:9px;border-left:2px solid var(--blu);">📝 ${escHtml(note)}</div>`:''}
       ${pout?`<div class="pbox"><div style="font-size:10px;font-weight:700;color:var(--amb);text-transform:uppercase;margin-bottom:6px;">💰 Výplata</div><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:var(--amb);">${fp(pout.amt)}<span style="font-size:11px;color:var(--t3);">${instrLabel(s)}</span></div>${pout.costs?`<div style="font-size:11px;color:var(--t2);margin-top:3px;">Iné náklady: ${fp(pout.costs)}</div>`:''}${pout.note?`<div style="font-size:11px;color:var(--t2);">${escHtml(pout.note)}</div>`:''}</div>`:''}
     </div>`;
   }).join('');
@@ -7109,10 +7258,10 @@ function savePout(){
   if(costs>0&&!note){toast(t('toast-cost-note-required'));return;}
   const amt=_poutTotal();
   const instrPay={};poutInstrs.forEach(it=>{instrPay[it.name]=parseFloat(it.amt)||0;});
-  const pouts=lPouts();pouts[poutKey]={amt,costs,note,type,hrs,instructors:poutInstrs.map(x=>x.name),instrPay,mts:Date.now()};sPouts(pouts);
+  const pouts=lPouts();pouts[poutKey]={amt,costs,note,type,hrs,instructors:poutInstrs.map(x=>x.name),instrPay,mts:nowS()};sPouts(pouts);
   markSessDirty(poutKey); // ✅ v4k: aj uzavretá akcia sa musí dostať do cloudu
   // ✅ Zrkadli zoznam inštruktorov aj do aktívnej akcie (ak ešte beží), aby bol konzistentný.
-  const _as=sessArr.find(s=>s.key===poutKey);if(_as){_as.instructors=poutInstrs.map(x=>x.name);_as.mts=Date.now();}
+  const _as=sessArr.find(s=>s.key===poutKey);if(_as){_as.instructors=poutInstrs.map(x=>x.name);_as.mts=nowS();}
   cm('m-pout');save();toast('Výplata uložená: '+fp(amt)+(poutInstrs.length>1?` · ${poutInstrs.length} inštruktori`:''));rAkcie();if($('p-closed')?.classList.contains('on'))rClosed();
   if($('p-spravca')?.classList.contains('on'))rSpravca();
   if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
@@ -7122,8 +7271,8 @@ function savePout(){
 // ══ NOTE ══
 function openNote(key){noteKey=key;const notes=lNotes();$('note-t').value=notes[key]||'';om('m-note');}
 function saveNote(){const notes=lNotes();notes[noteKey]=$('note-t').value.trim();sNotes(notes);
-  const nm=colGet('nmts');nm[noteKey]=Date.now();colSet('nmts',nm);
-  const s=sessArr.find(x=>x.key===noteKey);if(s){s.note=notes[noteKey];s.mts=Date.now();}markSessDirty(noteKey);save();cm('m-note');toast(t('toast-note-saved'));
+  const nm=colGet('nmts');nm[noteKey]=nowS();colSet('nmts',nm);
+  const s=sessArr.find(x=>x.key===noteKey);if(s){s.note=notes[noteKey];s.mts=nowS();}markSessDirty(noteKey);save();cm('m-note');toast(t('toast-note-saved'));
   if($('p-akcie')?.classList.contains('on'))rAkcie();
   if($('p-spravca')?.classList.contains('on'))rSpravca();
   if($('p-analyzy')?.classList.contains('on'))rAnalyzy();
